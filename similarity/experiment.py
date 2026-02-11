@@ -24,4 +24,4 @@ class Experiment:
         print(self.predicted_spectra)
         print(self.mz_irt_df.shape)
         print(self.groups_df.shape)
-        print(self.processed_pairs)
+        return self.processed_pairs
