@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 class Fixture(ABC):
     """A descriptor for a calculation result. Placeholder for caching implementation."""
+
     _data: Any = None
 
     @abstractmethod
@@ -28,7 +29,12 @@ class BaseConfig:
     def argparser(cls) -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser(description="Experiment configuration")
         for field in fields(cls):
-            parser.add_argument(f"--{field.name.replace('_', '-')}", type=field.type, default=field.default, required=field.default is None)
+            parser.add_argument(
+                f"--{field.name.replace('_', '-')}",
+                type=field.type,
+                default=field.default,
+                required=field.default is None,
+            )
         return parser
 
 
@@ -40,8 +46,9 @@ class Config(BaseConfig):
     charge: int = 2
     model_intensity: str = "Prosit_2020_intensity_HCD"
     model_irt: str = "Prosit_2019_irt"
-    mz_tolerance: float = 1.
-    irt_tolerance: float = 5.
-    peak_tolerance: float = 0.
+    mz_tolerance: float = 1.0
+    irt_tolerance: float = 5.0
+    peak_tolerance: float = 0.0
     peak_ppm: float = 10
     n_chunks: int = 1
+    koina_host: str = "koina.wilhelmlab.org:443"

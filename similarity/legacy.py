@@ -82,11 +82,15 @@ def process_spectra_pairs(
     for index_pair in chunk:
         i, j = index_pair
 
-        x = spectra[i]
-        y = spectra[j]
+        # x = spectra[i]
+        # y = spectra[j]
 
-        x_df = pd.DataFrame({"mz": x.peaks.mz, "intensities": x.peaks.intensities})
-        y_df = pd.DataFrame({"mz": y.peaks.mz, "intensities": y.peaks.intensities})
+        # x_df = pd.DataFrame({"mz": x.peaks.mz, "intensities": x.peaks.intensities})
+        # y_df = pd.DataFrame({"mz": y.peaks.mz, "intensities": y.peaks.intensities})
+        pep1 = mz_irt_df.loc[i, "peptide_sequences"]
+        pep2 = mz_irt_df.loc[j, "peptide_sequences"]
+        x_df = spectra.loc[spectra["peptide_sequences"] == pep1, ["mz", "intensities"]]
+        y_df = spectra.loc[spectra["peptide_sequences"] == pep2, ["mz", "intensities"]]
 
         matcher = joinPeaks(tolerance=tolerance, ppm=ppm)
         x_matched, y_matched = matcher.match(x_df, y_df)

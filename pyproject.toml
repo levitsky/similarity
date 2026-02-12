@@ -23,7 +23,8 @@ classifiers = [
 dependencies = [
     "MSCI", "matchms", # legacy deps
     "pyopenms", # for MSCI.Preprocessing.Parsing
-    "koinapy"
+    "koinapy",
+    "pyteomics.cythonize",
 ]
 
 [project.urls]
