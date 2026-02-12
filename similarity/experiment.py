@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 
 class Experiment:
-    # peptides = PeptideCollection()
     predicted_spectra = PredictedSpectrumCollection()
     mz_irt_df = MzIrtDataFrame()
     groups_df = SpectrumGrouping()
@@ -19,9 +18,6 @@ class Experiment:
         self.config = config
 
     def run(self):
-        # Placeholder for the main logic of the experiment
-        # print(f"Predicted spectra: {self.predicted_spectra}")
-        # Perform calculations and comparisons here
         logger.debug("Predicted spectra: %s", self.predicted_spectra)
         logger.debug("MzIrtDataFrame shape: %s", self.mz_irt_df.shape)
         logger.debug("Groups DataFrame shape: %s", self.groups_df.shape)
