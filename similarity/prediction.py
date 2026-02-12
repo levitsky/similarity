@@ -32,7 +32,9 @@ class MzIrtDataFrame(Fixture):
         model = Koina(experiment.config.model_irt, experiment.config.koina_host)
         df = model.predict(inputs)
         df.columns = ["peptide_sequences", "iRT"]  # rename iRT for legacy compatibility
-        df["MW"] = df["peptide_sequences"].apply(cmass.fast_mass)
+        df["MW"] = df["peptide_sequences"].apply(
+            lambda seq: cmass.fast_mass(seq, charge=experiment.config.charge)
+        )
         df["precursor_charges"] = experiment.config.charge
         df["collision_energies"] = experiment.config.collision_energy
         df["Name"] = df["peptide_sequences"].str.cat(
