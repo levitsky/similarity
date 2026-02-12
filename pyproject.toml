@@ -21,8 +21,9 @@ classifiers = [
 ]
 
 dependencies = [
-    "MSCI", "matchms",
-    "pyopenms" # for MSCI.Preprocessing.Parsing
+    "MSCI", "matchms", # legacy deps
+    "pyopenms", # for MSCI.Preprocessing.Parsing
+    "koinapy"
 ]
 
 [project.urls]

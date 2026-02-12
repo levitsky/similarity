@@ -1,10 +1,11 @@
-from typing import Any
-from collections.abc import Iterable
+import logging
 
-from .utils import Fixture, Config
+from .utils import Config
 from .prediction import PredictedSpectrumCollection, MzIrtDataFrame
 from .grouping import SpectrumGrouping
 from .scoring import ProcessedPairs
+
+logger = logging.getLogger(__name__)
 
 
 class Experiment:
@@ -21,7 +22,7 @@ class Experiment:
         # Placeholder for the main logic of the experiment
         # print(f"Predicted spectra: {self.predicted_spectra}")
         # Perform calculations and comparisons here
-        print(self.predicted_spectra)
-        print(self.mz_irt_df.shape)
-        print(self.groups_df.shape)
+        logger.debug("Predicted spectra: %s", self.predicted_spectra)
+        logger.debug("MzIrtDataFrame shape: %s", self.mz_irt_df.shape)
+        logger.debug("Groups DataFrame shape: %s", self.groups_df.shape)
         return self.processed_pairs
