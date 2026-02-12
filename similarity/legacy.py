@@ -11,37 +11,40 @@ from matchms.importing import load_from_msp
 from tqdm import tqdm
 from multiprocessing import cpu_count, Pool, Manager
 from functools import partial
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-def predict_spectra(
-    input_file: str,
-    collision_energy: int = 30,
-    charge: int = 2,
-    model_intensity: str = "Prosit_2020_intensity_HCD",
-    model_irt: str = "Prosit_2019_irt",
-):
-    pred_file = f"{Path(input_file).with_suffix('')}.msp"
+# def predict_spectra(
+#     input_file: str,
+#     collision_energy: int = 30,
+#     charge: int = 2,
+#     model_intensity: str = "Prosit_2020_intensity_HCD",
+#     model_irt: str = "Prosit_2019_irt",
+# ):
+#     pred_file = f"{Path(input_file).with_suffix('')}.msp"
 
-    processor = PeptideProcessor(
-        input_file=input_file,
-        collision_energy=collision_energy,
-        charge=charge,
-        model_intensity=model_intensity,
-        model_irt=model_irt,
-    )
+#     processor = PeptideProcessor(
+#         input_file=input_file,
+#         collision_energy=collision_energy,
+#         charge=charge,
+#         model_intensity=model_intensity,
+#         model_irt=model_irt,
+#     )
 
-    processor.process(pred_file)
+#     processor.process(pred_file)
 
-    if Path(pred_file).stat().st_size == 0:
-        raise RuntimeError("Generating spectrum predictions failed")
+#     if Path(pred_file).stat().st_size == 0:
+#         raise RuntimeError("Generating spectrum predictions failed")
 
-    spectra = list(load_from_msp(pred_file))
-    return spectra
+#     spectra = list(load_from_msp(pred_file))
+#     return spectra
 
 
-def get_mz_irt_df(pred_file: str):
-    df = read_msp_file(pred_file)
-    return df
+# def get_mz_irt_df(pred_file: str):
+#     df = read_msp_file(pred_file)
+#     return df
 
 
 def process_peptide_combinations(mz_irt_df, tolerance1, tolerance2, use_ppm=True):
@@ -68,7 +71,7 @@ def process_peptide_combinations(mz_irt_df, tolerance1, tolerance2, use_ppm=True
         )
 
     results_df = pd.DataFrame(results)
-    print("results_df", results_df)
+    logger.debug("results_df: %s", results_df)
     if not results_df.empty:
         results_df.columns = results_df.columns.str.replace(" ", "")
     return results_df
@@ -82,11 +85,26 @@ def process_spectra_pairs(
     for index_pair in chunk:
         i, j = index_pair
 
-        x = spectra[i]
-        y = spectra[j]
+        # x = spectra[i]
+        # y = spectra[j]
 
-        x_df = pd.DataFrame({"mz": x.peaks.mz, "intensities": x.peaks.intensities})
-        y_df = pd.DataFrame({"mz": y.peaks.mz, "intensities": y.peaks.intensities})
+        # x_df = pd.DataFrame({"mz": x.peaks.mz, "intensities": x.peaks.intensities})
+        # y_df = pd.DataFrame({"mz": y.peaks.mz, "intensities": y.peaks.intensities})
+        pep1 = mz_irt_df.loc[i, "peptide_sequences"]
+        pep2 = mz_irt_df.loc[j, "peptide_sequences"]
+        x_df = (
+            spectra.loc[spectra["peptide_sequences"] == pep1, ["mz", "intensities"]]
+            .sort_values(by="mz")
+            .reset_index(drop=True)
+        )
+        y_df = (
+            spectra.loc[spectra["peptide_sequences"] == pep2, ["mz", "intensities"]]
+            .sort_values(by="mz")
+            .reset_index(drop=True)
+        )
+        # print("Processing pair:", pep1, "and", pep2)
+        # print("x_df:", x_df)
+        # print("y_df:", y_df)
 
         matcher = joinPeaks(tolerance=tolerance, ppm=ppm)
         x_matched, y_matched = matcher.match(x_df, y_df)

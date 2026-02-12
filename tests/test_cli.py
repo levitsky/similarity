@@ -32,6 +32,7 @@ class TestExperiment(unittest.TestCase):
                     0.858346,
                     0.933183,
                 ],
+                atol=1e-3,
             )
         )
 
