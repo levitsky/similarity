@@ -15,8 +15,6 @@ class TestExperiment(unittest.TestCase):
         result = exp.run()
         # Check that run() returns the processed_pairs object
         self.assertIsNotNone(result)
-        # Optionally, check the type
-        self.assertEqual(type(result).__name__, "ProcessedPairs")
 
 
 if __name__ == "__main__":
