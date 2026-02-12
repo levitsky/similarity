@@ -7,7 +7,7 @@ from pyteomics import cmass
 if TYPE_CHECKING:
     from .experiment import Experiment
 
-from .legacy import predict_spectra, get_mz_irt_df
+# from .legacy import predict_spectra, get_mz_irt_df
 
 
 class PredictedSpectrumCollection(Fixture):

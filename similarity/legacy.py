@@ -16,35 +16,35 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def predict_spectra(
-    input_file: str,
-    collision_energy: int = 30,
-    charge: int = 2,
-    model_intensity: str = "Prosit_2020_intensity_HCD",
-    model_irt: str = "Prosit_2019_irt",
-):
-    pred_file = f"{Path(input_file).with_suffix('')}.msp"
+# def predict_spectra(
+#     input_file: str,
+#     collision_energy: int = 30,
+#     charge: int = 2,
+#     model_intensity: str = "Prosit_2020_intensity_HCD",
+#     model_irt: str = "Prosit_2019_irt",
+# ):
+#     pred_file = f"{Path(input_file).with_suffix('')}.msp"
 
-    processor = PeptideProcessor(
-        input_file=input_file,
-        collision_energy=collision_energy,
-        charge=charge,
-        model_intensity=model_intensity,
-        model_irt=model_irt,
-    )
+#     processor = PeptideProcessor(
+#         input_file=input_file,
+#         collision_energy=collision_energy,
+#         charge=charge,
+#         model_intensity=model_intensity,
+#         model_irt=model_irt,
+#     )
 
-    processor.process(pred_file)
+#     processor.process(pred_file)
 
-    if Path(pred_file).stat().st_size == 0:
-        raise RuntimeError("Generating spectrum predictions failed")
+#     if Path(pred_file).stat().st_size == 0:
+#         raise RuntimeError("Generating spectrum predictions failed")
 
-    spectra = list(load_from_msp(pred_file))
-    return spectra
+#     spectra = list(load_from_msp(pred_file))
+#     return spectra
 
 
-def get_mz_irt_df(pred_file: str):
-    df = read_msp_file(pred_file)
-    return df
+# def get_mz_irt_df(pred_file: str):
+#     df = read_msp_file(pred_file)
+#     return df
 
 
 def process_peptide_combinations(mz_irt_df, tolerance1, tolerance2, use_ppm=True):
