@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 
 class Experiment:
     mz_irt_df = MzIrtDataFrame()
-    predicted_spectra = PredictedSpectrumCollection()
     groups_df = SpectrumGrouping()
+    predicted_spectra = PredictedSpectrumCollection()
     processed_pairs = ProcessedPairs()
 
     def __init__(self, config: Config):
@@ -19,6 +19,6 @@ class Experiment:
 
     def run(self):
         logger.debug("MzIrtDataFrame columns: %s", self.mz_irt_df.columns)
-        logger.debug("Predicted spectra: %s", self.predicted_spectra)
         logger.debug("Groups DataFrame shape: %s", self.groups_df.shape)
+        logger.debug("Predicted spectra: %s", self.predicted_spectra)
         return self.processed_pairs

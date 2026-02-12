@@ -102,9 +102,9 @@ def process_spectra_pairs(
             .sort_values(by="mz")
             .reset_index(drop=True)
         )
-        print("Processing pair:", pep1, "and", pep2)
-        print("x_df:", x_df)
-        print("y_df:", y_df)
+        # print("Processing pair:", pep1, "and", pep2)
+        # print("x_df:", x_df)
+        # print("y_df:", y_df)
 
         matcher = joinPeaks(tolerance=tolerance, ppm=ppm)
         x_matched, y_matched = matcher.match(x_df, y_df)
