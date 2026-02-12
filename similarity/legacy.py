@@ -11,6 +11,9 @@ from matchms.importing import load_from_msp
 from tqdm import tqdm
 from multiprocessing import cpu_count, Pool, Manager
 from functools import partial
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def predict_spectra(
@@ -68,7 +71,7 @@ def process_peptide_combinations(mz_irt_df, tolerance1, tolerance2, use_ppm=True
         )
 
     results_df = pd.DataFrame(results)
-    print("results_df", results_df)
+    logger.debug("results_df: %s", results_df)
     if not results_df.empty:
         results_df.columns = results_df.columns.str.replace(" ", "")
     return results_df
@@ -89,8 +92,19 @@ def process_spectra_pairs(
         # y_df = pd.DataFrame({"mz": y.peaks.mz, "intensities": y.peaks.intensities})
         pep1 = mz_irt_df.loc[i, "peptide_sequences"]
         pep2 = mz_irt_df.loc[j, "peptide_sequences"]
-        x_df = spectra.loc[spectra["peptide_sequences"] == pep1, ["mz", "intensities"]]
-        y_df = spectra.loc[spectra["peptide_sequences"] == pep2, ["mz", "intensities"]]
+        x_df = (
+            spectra.loc[spectra["peptide_sequences"] == pep1, ["mz", "intensities"]]
+            .sort_values(by="mz")
+            .reset_index(drop=True)
+        )
+        y_df = (
+            spectra.loc[spectra["peptide_sequences"] == pep2, ["mz", "intensities"]]
+            .sort_values(by="mz")
+            .reset_index(drop=True)
+        )
+        print("Processing pair:", pep1, "and", pep2)
+        print("x_df:", x_df)
+        print("y_df:", y_df)
 
         matcher = joinPeaks(tolerance=tolerance, ppm=ppm)
         x_matched, y_matched = matcher.match(x_df, y_df)
