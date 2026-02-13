@@ -18,7 +18,15 @@ class Experiment:
         self.config = config
 
     def run(self):
-        logger.debug("MzIrtDataFrame columns: %s", self.mz_irt_df.columns)
-        logger.debug("Groups DataFrame shape: %s", self.groups_df.shape)
+        logger.info("Start predicting spectra...")
         logger.debug("Predicted spectra: %s", self.predicted_spectra)
+        logger.info("Predicted spectra size: %d", len(self.predicted_spectra))
+        logger.info("Start calculating mz and predicting RT...")
+        logger.debug("MzIrtDataFrame shape: %s", self.mz_irt_df.shape)
+        logger.info("MzIrtDataFrame shape: %s", self.mz_irt_df.shape)
+        logger.info("Start making groups...")
+        logger.debug("Groups DataFrame shape: %s", self.groups_df.shape)
+        logger.info("Groups DataFrame shape: %s", self.groups_df.shape)
+        logger.info("Start processing pairs...")
+        logger.info("Processed pairs shape: %s", self.processed_pairs.shape)
         return self.processed_pairs

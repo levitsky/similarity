@@ -3,20 +3,27 @@ import numpy as np
 from similarity.experiment import Experiment
 from similarity.utils import Config
 from pathlib import Path
+import logging
 
 
 class TestExperiment(unittest.TestCase):
     def setUp(self):
         self.config = Config(input_file=Path("tests/test_peptides.txt"))
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            force=True,  # overrides any existing logging config
+        )
+        self.logger = logging.getLogger("TestExperiment")
 
     def test_run(self):
         """Test that Experiment.run() executes and returns something."""
         exp = Experiment(self.config)
         result = exp.run().sort_values(["index1", "index2"])
         # Check that run() returns the processed_pairs object
-        print("Final result:")
-        print(result)
-        print(result.shape)
+        # print("Final result:")
+        # print(result)
+        # print(result.shape)
         self.assertEqual(result.shape[0], 9)  # Assuming 9 pairs based on the test input
         self.assertTrue(
             np.allclose(
