@@ -52,3 +52,4 @@ class Config(BaseConfig):
     peak_ppm: float = 10
     n_chunks: int = 1
     verbose: bool = False
+    koina_host: str = "koina.wilhelmlab.org:443"

@@ -9,9 +9,9 @@ logger = logging.getLogger(__name__)
 
 
 class Experiment:
-    predicted_spectra = PredictedSpectrumCollection()
     mz_irt_df = MzIrtDataFrame()
     groups_df = SpectrumGrouping()
+    predicted_spectra = PredictedSpectrumCollection()
     processed_pairs = ProcessedPairs()
 
     def __init__(self, config: Config):
