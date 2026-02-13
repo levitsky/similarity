@@ -10,7 +10,7 @@ class TestExperiment(unittest.TestCase):
     def setUp(self):
         self.config = Config(input_file=Path("tests/test_peptides.txt"))
         logging.basicConfig(
-            level=logging.INFO,
+            level=logging.DEBUG,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             force=True,  # overrides any existing logging config
         )
@@ -21,13 +21,11 @@ class TestExperiment(unittest.TestCase):
         exp = Experiment(self.config)
         result = exp.run().sort_values(["index1", "index2"])
         # Check that run() returns the processed_pairs object
-        # print("Final result:")
-        # print(result)
-        # print(result.shape)
+        self.logger.debug("Final result:\n%s", result)
         self.assertEqual(result.shape[0], 9)  # Assuming 9 pairs based on the test input
         self.assertTrue(
             np.allclose(
-                result["similarity_score"],
+                result["similarity score"],
                 [
                     0.847243,
                     0.816326,

@@ -47,34 +47,34 @@ logger = logging.getLogger(__name__)
 #     return df
 
 
-def process_peptide_combinations(mz_irt_df, tolerance1, tolerance2, use_ppm=True):
-    compatible_data = make_data_compatible(mz_irt_df)
-    result_tolerance = find_combinations_kdtree(
-        compatible_data, tolerance1, tolerance2, use_ppm
-    )
-    unique_result_tolerance = list({tuple(sorted(pair)) for pair in result_tolerance})
+# def process_peptide_combinations(mz_irt_df, tolerance1, tolerance2, use_ppm=True):
+#     compatible_data = make_data_compatible(mz_irt_df)
+#     result_tolerance = find_combinations_kdtree(
+#         compatible_data, tolerance1, tolerance2, use_ppm
+#     )
+#     unique_result_tolerance = list({tuple(sorted(pair)) for pair in result_tolerance})
 
-    # Create a DataFrame for the results
-    results = []
-    for (index1, mw1, irt1), (index2, mw2, irt2) in unique_result_tolerance:
-        results.append(
-            {
-                "index1": index1,
-                "index2": index2,
-                "peptide 1": mz_irt_df.loc[index1, "Name"],
-                "peptide 2": mz_irt_df.loc[index2, "Name"],
-                "m/z  1": mz_irt_df.loc[index1, "MW"],
-                "m/z 2": mz_irt_df.loc[index2, "MW"],
-                "iRT 1": mz_irt_df.loc[index1, "iRT"],
-                "iRT 2": mz_irt_df.loc[index2, "iRT"],
-            }
-        )
+#     # Create a DataFrame for the results
+#     results = []
+#     for (index1, mw1, irt1), (index2, mw2, irt2) in unique_result_tolerance:
+#         results.append(
+#             {
+#                 "index1": index1,
+#                 "index2": index2,
+#                 "peptide 1": mz_irt_df.loc[index1, "Name"],
+#                 "peptide 2": mz_irt_df.loc[index2, "Name"],
+#                 "m/z  1": mz_irt_df.loc[index1, "MW"],
+#                 "m/z 2": mz_irt_df.loc[index2, "MW"],
+#                 "iRT 1": mz_irt_df.loc[index1, "iRT"],
+#                 "iRT 2": mz_irt_df.loc[index2, "iRT"],
+#             }
+#         )
 
-    results_df = pd.DataFrame(results)
-    logger.debug("results_df: %s", results_df)
-    if not results_df.empty:
-        results_df.columns = results_df.columns.str.replace(" ", "")
-    return results_df
+#     results_df = pd.DataFrame(results)
+#     logger.debug("results_df: %s", results_df)
+#     if not results_df.empty:
+#         results_df.columns = results_df.columns.str.replace(" ", "")
+#     return results_df
 
 
 def process_spectra_pairs(
@@ -105,7 +105,6 @@ def process_spectra_pairs(
         # print("Processing pair:", pep1, "and", pep2)
         # print("x_df:", x_df)
         # print("y_df:", y_df)
-
         matcher = joinPeaks(tolerance=tolerance, ppm=ppm)
         x_matched, y_matched = matcher.match(x_df, y_df)
 
