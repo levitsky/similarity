@@ -68,7 +68,7 @@ def process_peptide_combinations(mz_irt_df, tolerance1, tolerance2, use_ppm=True
         )
 
     results_df = pd.DataFrame(results)
-    print("results_df", results_df)
+    # print("results_df", results_df)
     if not results_df.empty:
         results_df.columns = results_df.columns.str.replace(" ", "")
     return results_df
