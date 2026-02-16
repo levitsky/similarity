@@ -16,4 +16,8 @@ def experiment():
     config = Config(**vars(args))
     exp = Experiment(config)
     result = exp.run()
-    logger.debug("Experiment result: %s", result)
+    logger.info("Experiment result: %s", result)
+
+
+if __name__ == "__main__":
+    experiment()

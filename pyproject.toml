@@ -25,6 +25,9 @@ dependencies = [
     "pyopenms", # for MSCI.Preprocessing.Parsing
     "koinapy",
     "pyteomics.cythonize",
+    "scipy",
+    # spectram_similarity is not installable via pip yet
+    # "spectral_similarity @ git+https://github.com/jlapin1/spectral_similarity"
 ]
 
 [project.urls]
