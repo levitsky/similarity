@@ -56,51 +56,60 @@ class ProcessedPairs(Fixture):
         )
         return score
 
+    def score_pair(self, i: int, j: int, experiment: "Experiment") -> float:
+        mz_irt_df = experiment.mz_irt_df
+        spectra = experiment.predicted_spectra
+        pep1 = mz_irt_df.loc[i, "peptide_sequences"]
+        pep2 = mz_irt_df.loc[j, "peptide_sequences"]
+        mz1 = spectra.loc[spectra["peptide_sequences"] == pep1, "mz"].values
+        mz2 = spectra.loc[spectra["peptide_sequences"] == pep2, "mz"].values
+        idx1, idx2 = self.match_peaks(
+            mz1,
+            mz2,
+            atol=experiment.config.peak_tolerance,
+            rtol=experiment.config.peak_ppm / 1e6,
+        )
+
+        intensities1 = spectra.loc[
+            spectra["peptide_sequences"] == pep1, "intensities"
+        ].values
+        intensities2 = spectra.loc[
+            spectra["peptide_sequences"] == pep2, "intensities"
+        ].values
+        logger.debug(
+            "For pair (%d, %d), the matching peaks: %s and %s with intensities %s and %s",
+            i,
+            j,
+            mz1[idx1],
+            mz2[idx2],
+            intensities1,
+            intensities2,
+        )
+        logger.debug("Full m/z arrays: %s and %s", mz1, mz2)
+        return self.similarity_score(intensities1, intensities2, idx1, idx2)
+
+    def format_result(
+        self, i: int, j: int, score: float, experiment: "Experiment"
+    ) -> dict:
+        mz_irt_df = experiment.mz_irt_df
+        pep1 = mz_irt_df.loc[i, "peptide_sequences"]
+        pep2 = mz_irt_df.loc[j, "peptide_sequences"]
+        return {
+            "index1": i,
+            "index2": j,
+            "peptide 1": pep1,
+            "peptide 2": pep2,
+            "m/z 1": mz_irt_df.loc[i, "m/z"],
+            "m/z 2": mz_irt_df.loc[j, "m/z"],
+            "iRT 1": mz_irt_df.loc[i, "irt"],
+            "iRT 2": mz_irt_df.loc[j, "irt"],
+            "similarity score": score,
+        }
+
     def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
         index_array = experiment.pairs
-        spectra = experiment.predicted_spectra
-        mz_irt_df = experiment.mz_irt_df
         rows = []
         for i, j in index_array:
-            pep1 = mz_irt_df.loc[i, "peptide_sequences"]
-            pep2 = mz_irt_df.loc[j, "peptide_sequences"]
-            mz1 = spectra.loc[spectra["peptide_sequences"] == pep1, "mz"].values
-            mz2 = spectra.loc[spectra["peptide_sequences"] == pep2, "mz"].values
-            idx1, idx2 = self.match_peaks(
-                mz1,
-                mz2,
-                atol=experiment.config.peak_tolerance,
-                rtol=experiment.config.peak_ppm / 1e6,
-            )
-
-            intensities1 = spectra.loc[
-                spectra["peptide_sequences"] == pep1, "intensities"
-            ].values
-            intensities2 = spectra.loc[
-                spectra["peptide_sequences"] == pep2, "intensities"
-            ].values
-            logger.debug(
-                "For pair (%d, %d), the matching peaks: %s and %s with intensities %s and %s",
-                i,
-                j,
-                mz1[idx1],
-                mz2[idx2],
-                intensities1,
-                intensities2,
-            )
-            logger.debug("Full m/z arrays: %s and %s", mz1, mz2)
-            score = self.similarity_score(intensities1, intensities2, idx1, idx2)
-            rows.append(
-                {
-                    "index1": i,
-                    "index2": j,
-                    "peptide 1": pep1,
-                    "peptide 2": pep2,
-                    "m/z 1": mz_irt_df.loc[i, "m/z"],
-                    "m/z 2": mz_irt_df.loc[j, "m/z"],
-                    "iRT 1": mz_irt_df.loc[i, "irt"],
-                    "iRT 2": mz_irt_df.loc[j, "irt"],
-                    "similarity score": score,
-                }
-            )
+            score = self.score_pair(i, j, experiment)
+            rows.append(self.format_result(i, j, score, experiment))
         return pd.DataFrame(rows)
