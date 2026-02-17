@@ -61,8 +61,8 @@ class ProcessedPairs(Fixture):
         spectra = experiment.predicted_spectra
         pep1 = mz_irt_df.loc[i, "peptide_sequences"]
         pep2 = mz_irt_df.loc[j, "peptide_sequences"]
-        mz1, intensities1 = spectra.loc[pep1, ["mz", "intensities"]].values.T
-        mz2, intensities2 = spectra.loc[pep2, ["mz", "intensities"]].values.T
+        mz1, intensities1 = spectra[pep1]
+        mz2, intensities2 = spectra[pep2]
         idx1, idx2 = self.match_peaks(
             mz1,
             mz2,

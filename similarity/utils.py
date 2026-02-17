@@ -51,3 +51,4 @@ class Config(BaseConfig):
     peak_tolerance: float = 0.0
     peak_ppm: float = 10.0
     koina_host: str = "koina.wilhelmlab.org:443"
+    cache_dir: Path = Path(".")

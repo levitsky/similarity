@@ -21,11 +21,10 @@ classifiers = [
 ]
 
 dependencies = [
-    "MSCI", "matchms", # legacy deps
-    "pyopenms", # for MSCI.Preprocessing.Parsing
     "koinapy",
     "pyteomics.cythonize",
     "scipy",
+    "diskcache",
     # spectram_similarity is not installable via pip yet
     # "spectral_similarity @ git+https://github.com/jlapin1/spectral_similarity"
 ]
