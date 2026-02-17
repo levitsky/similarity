@@ -61,8 +61,8 @@ class ProcessedPairs(Fixture):
         spectra = experiment.predicted_spectra
         pep1 = mz_irt_df.loc[i, "peptide_sequences"]
         pep2 = mz_irt_df.loc[j, "peptide_sequences"]
-        mz1 = spectra.loc[spectra["peptide_sequences"] == pep1, "mz"].values
-        mz2 = spectra.loc[spectra["peptide_sequences"] == pep2, "mz"].values
+        mz1, intensities1 = spectra.loc[pep1, ["mz", "intensities"]].values.T
+        mz2, intensities2 = spectra.loc[pep2, ["mz", "intensities"]].values.T
         idx1, idx2 = self.match_peaks(
             mz1,
             mz2,
@@ -70,12 +70,6 @@ class ProcessedPairs(Fixture):
             rtol=experiment.config.peak_ppm / 1e6,
         )
 
-        intensities1 = spectra.loc[
-            spectra["peptide_sequences"] == pep1, "intensities"
-        ].values
-        intensities2 = spectra.loc[
-            spectra["peptide_sequences"] == pep2, "intensities"
-        ].values
         logger.debug(
             "For pair (%d, %d), the matching peaks: %s and %s with intensities %s and %s",
             i,
