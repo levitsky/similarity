@@ -96,12 +96,8 @@ class EquivalenceTest(TestBase):
             with self.subTest(pair=(i, j)):
                 pep1 = exp.mz_irt_df.loc[i, "peptide_sequences"]
                 pep2 = exp.mz_irt_df.loc[j, "peptide_sequences"]
-                mz1 = exp.predicted_spectra.loc[
-                    exp.predicted_spectra["peptide_sequences"] == pep1, "mz"
-                ].values
-                mz2 = exp.predicted_spectra.loc[
-                    exp.predicted_spectra["peptide_sequences"] == pep2, "mz"
-                ].values
+                mz1 = exp.predicted_spectra.loc[pep1, "mz"].values
+                mz2 = exp.predicted_spectra.loc[pep2, "mz"].values
                 self.logger.debug(
                     "Testing peak matching for peptides %d, %d: %s and %s",
                     i,
@@ -128,16 +124,12 @@ class EquivalenceTest(TestBase):
                     tolerance=self.config.peak_tolerance, ppm=self.config.peak_ppm
                 )
                 x_df = (
-                    spectra.loc[
-                        spectra["peptide_sequences"] == pep1, ["mz", "intensities"]
-                    ]
+                    spectra.loc[pep1, ["mz", "intensities"]]
                     .sort_values(by="mz")
                     .reset_index(drop=True)
                 )
                 y_df = (
-                    spectra.loc[
-                        spectra["peptide_sequences"] == pep2, ["mz", "intensities"]
-                    ]
+                    spectra.loc[pep2, ["mz", "intensities"]]
                     .sort_values(by="mz")
                     .reset_index(drop=True)
                 )
@@ -198,16 +190,12 @@ class EquivalenceTest(TestBase):
                     tolerance=self.config.peak_tolerance, ppm=self.config.peak_ppm
                 )
                 x_df = (
-                    spectra.loc[
-                        spectra["peptide_sequences"] == pep1, ["mz", "intensities"]
-                    ]
+                    spectra.loc[pep1, ["mz", "intensities"]]
                     .sort_values(by="mz")
                     .reset_index(drop=True)
                 )
                 y_df = (
-                    spectra.loc[
-                        spectra["peptide_sequences"] == pep2, ["mz", "intensities"]
-                    ]
+                    spectra.loc[pep2, ["mz", "intensities"]]
                     .sort_values(by="mz")
                     .reset_index(drop=True)
                 )
