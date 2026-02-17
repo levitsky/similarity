@@ -5,6 +5,7 @@ import logging
 
 def experiment():
     p = Config.argparser()
+    p.add_argument("--verbose", action="store_true", help="Enable verbose logging")
     args = p.parse_args()
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -12,8 +13,10 @@ def experiment():
     )
     logger = logging.getLogger(__name__)
     logger.info("Parsed arguments: %s", args)
+    kw = vars(args)
+    kw.pop("verbose", None)  # Remove verbose from config kwargs
 
-    config = Config(**vars(args))
+    config = Config(**kw)
     exp = Experiment(config)
     result = exp.run()
     logger.info("Experiment result: %s", result)

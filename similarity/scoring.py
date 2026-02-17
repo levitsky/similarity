@@ -20,7 +20,7 @@ class ProcessedPairs(Fixture):
             atol=atol,
         )
         idx1, idx2 = np.where(mask)
-        return np.unique(idx1), np.unique(idx2)
+        return idx1, idx2
 
     @staticmethod
     def similarity_score(
@@ -82,10 +82,10 @@ class ProcessedPairs(Fixture):
             j,
             mz1[idx1],
             mz2[idx2],
-            intensities1,
-            intensities2,
+            intensities1[idx1],
+            intensities2[idx2],
         )
-        logger.debug("Full m/z arrays: %s and %s", mz1, mz2)
+        logger.debug("Full m/z arrays:\n%s:\n %s and\n%s:\n%s", pep1, mz1, pep2, mz2)
         return self.similarity_score(intensities1, intensities2, idx1, idx2)
 
     def format_result(

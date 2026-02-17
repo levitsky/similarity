@@ -50,5 +50,4 @@ class Config(BaseConfig):
     irt_tolerance: float = 5.0
     peak_tolerance: float = 0.0
     peak_ppm: float = 10.0
-    verbose: bool = False
     koina_host: str = "koina.wilhelmlab.org:443"
