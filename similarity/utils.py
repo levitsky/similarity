@@ -4,6 +4,7 @@ from pathlib import Path
 import argparse
 import multiprocessing as mp
 import diskcache
+from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -57,13 +58,12 @@ class Config(BaseConfig):
     workers: int = mp.cpu_count()
 
 
-class Index(diskcache.Index):
+class Index(diskcache.Index, ABC):
     """Index for predicted spectra. Uses experiment config to add collision energy, charge and model info to the key."""
 
+    @abstractmethod
     def _full_key(self, key: str) -> tuple:
-        config = self.experiment.config
-        # key is peptide sequence, we need to add collision energy, charge and model info to the key
-        return (key, config.collision_energy, config.charge, config.model_intensity)
+        pass
 
     def __init__(self, experiment: "Experiment"):
         self.experiment = experiment
@@ -80,3 +80,17 @@ class Index(diskcache.Index):
     def __contains__(self, key: str) -> bool:
         full_key = self._full_key(key)
         return full_key in self.cache  # direct check on Index doesn't work
+
+
+class SpectrumIndex(Index):
+    def _full_key(self, key: str) -> tuple:
+        config = self.experiment.config
+        # key is peptide sequence, we need to add collision energy, charge and model info to the key
+        return (key, config.collision_energy, config.charge, config.model_intensity)
+
+
+class RTIndex(Index):
+    def _full_key(self, key: str) -> tuple:
+        config = self.experiment.config
+        # key is peptide sequence, we need to add model info to the key
+        return (key, config.model_irt)
