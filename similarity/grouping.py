@@ -14,6 +14,7 @@ class SpectrumGrouping(Fixture):
     def evaluate(self, experiment: "Experiment") -> list[tuple[int, int]]:
         # very close to legacy implementation, but not the bottleneck for now
         df = experiment.mz_irt_df
+        df["in pairs"] = False  # Add a column to track if a spectrum is in any pair
         tree = cKDTree(df[["m/z", "irt"]].values)
         logger.debug("Built cKDTree with %d nodes from %d points", tree.size, tree.n)
         radius = np.sqrt(
@@ -42,6 +43,8 @@ class SpectrumGrouping(Fixture):
                             "Pair (index1=%d, index2=%d) is within tolerance", i, j
                         )
                         pairs.append((i, j))
+                        df.loc[i, "in pairs"] = True
+                        df.loc[j, "in pairs"] = True
                     else:
                         logger.debug(
                             "Pair (index1=%d, index2=%d) is NOT within tolerance", i, j
