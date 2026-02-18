@@ -59,8 +59,14 @@ class PredictedSpectrumCollection(Fixture):
     def evaluate(self, experiment: "Experiment") -> Index:
         df = experiment.mz_irt_df
         index = Index(experiment=experiment)
+        # make sure pairs are calculated
+        experiment.pairs
         logger.info("Found cache with %d entries", len(index))
         df["cached"] = df["peptide_sequences"].apply(lambda seq: seq in index)
+        logger.info(
+            "Dropping %d peptides not in any pairs", (df["in pairs"] == False).sum()
+        )
+        df = df.loc[df["in pairs"]]
         logger.info("%d of %d spectra are cached", df["cached"].sum(), len(df))
         if df["cached"].all():
             logger.info("All spectra are cached, skipping prediction")
