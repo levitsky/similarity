@@ -1,8 +1,7 @@
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 import pandas as pd
-import diskcache
 from koinapy import Koina
-from .utils import Fixture
+from .utils import Fixture, Index
 from pyteomics import cmass
 import logging
 
@@ -11,31 +10,6 @@ if TYPE_CHECKING:
     from .experiment import Experiment
 
 logger = logging.getLogger(__name__)
-
-
-class Index(diskcache.Index):
-    """Index for predicted spectra. Uses experiment config to add collision energy, charge and model info to the key."""
-
-    def _full_key(self, key: str) -> tuple:
-        config = self.experiment.config
-        # key is peptide sequence, we need to add collision energy, charge and model info to the key
-        return (key, config.collision_energy, config.charge, config.model_intensity)
-
-    def __init__(self, experiment: "Experiment"):
-        self.experiment = experiment
-        super().__init__(str(experiment.config.cache_dir))
-
-    def __getitem__(self, key: str) -> Any:
-        full_key = self._full_key(key)
-        return super().__getitem__(full_key)
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        full_key = self._full_key(key)
-        super().__setitem__(full_key, value)
-
-    def __contains__(self, key: str) -> bool:
-        full_key = self._full_key(key)
-        return full_key in self.cache  # direct check on Index doesn't work
 
 
 class PredictedSpectrumCollection(Fixture):
