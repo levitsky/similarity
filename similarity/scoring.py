@@ -56,14 +56,15 @@ class ProcessedPairs(Fixture):
         )
         return score
 
-    def score_pair(self, i: int, j: int, experiment: "Experiment") -> float:
+    @staticmethod
+    def score_pair(i: int, j: int, experiment: "Experiment") -> float:
         mz_irt_df = experiment.mz_irt_df
         spectra = experiment.predicted_spectra
         pep1 = mz_irt_df.loc[i, "peptide_sequences"]
         pep2 = mz_irt_df.loc[j, "peptide_sequences"]
         mz1, intensities1 = spectra[pep1]
         mz2, intensities2 = spectra[pep2]
-        idx1, idx2 = self.match_peaks(
+        idx1, idx2 = ProcessedPairs.match_peaks(
             mz1,
             mz2,
             atol=experiment.config.peak_tolerance,
@@ -80,7 +81,7 @@ class ProcessedPairs(Fixture):
             intensities2[idx2],
         )
         logger.debug("Full m/z arrays:\n%s:\n %s and\n%s:\n%s", pep1, mz1, pep2, mz2)
-        return self.similarity_score(intensities1, intensities2, idx1, idx2)
+        return ProcessedPairs.similarity_score(intensities1, intensities2, idx1, idx2)
 
     def format_result(
         self, i: int, j: int, score: float, experiment: "Experiment"

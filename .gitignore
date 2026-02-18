@@ -3,3 +3,4 @@
 .vscode
 *.prof
 cache.db*
+**.tsv
