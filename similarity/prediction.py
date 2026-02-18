@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 import pandas as pd
 from koinapy import Koina
-from .utils import Fixture, Index
+from .utils import Fixture, SpectrumIndex, RTIndex
 from pyteomics import cmass
 import logging
 
@@ -25,14 +25,14 @@ class PredictedSpectrumCollection(Fixture):
         return processed
 
     @staticmethod
-    def save_predictions(data: dict[str, "np.ndarray"], index: Index) -> None:
+    def save_predictions(data: dict[str, "np.ndarray"], index: SpectrumIndex) -> None:
         with index.transact():
             for peptide, (mz, intensities) in data.items():
                 index[peptide] = mz, intensities
 
-    def evaluate(self, experiment: "Experiment") -> Index:
+    def evaluate(self, experiment: "Experiment") -> SpectrumIndex:
         df = experiment.mz_irt_df
-        index = Index(experiment=experiment)
+        index = SpectrumIndex(experiment=experiment)
         # make sure pairs are calculated
         experiment.pairs
         logger.info("Found cache with %d entries", len(index))
@@ -57,6 +57,12 @@ class PredictedSpectrumCollection(Fixture):
 
 
 class MzIrtDataFrame(Fixture):
+    @staticmethod
+    def save_rt_predictions(df: pd.DataFrame, index: RTIndex) -> None:
+        with index.transact():
+            for _, row in df.iterrows():
+                index[row["peptide_sequences"]] = row["irt"]
+
     def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
         input_file = experiment.config.input_file
         inputs = pd.read_table(input_file, names=["peptide_sequences"], header=None)
@@ -75,8 +81,28 @@ class MzIrtDataFrame(Fixture):
                 inputs.loc[unsupported, "peptide_sequences"].tolist(),
             )
         inputs = inputs.loc[~unsupported].reset_index(drop=True)
-        model = Koina(experiment.config.model_irt, experiment.config.koina_host)
-        df = model.predict(inputs, df_output=True)
+        index = RTIndex(experiment=experiment)
+        inputs["cached"] = inputs["peptide_sequences"].apply(lambda seq: seq in index)
+        logger.info(
+            "%d of %d peptides are cached for RT prediction",
+            inputs["cached"].sum(),
+            inputs.shape[0],
+        )
+        inputs.loc[inputs["cached"], "irt"] = inputs.loc[
+            inputs["cached"], "peptide_sequences"
+        ].apply(lambda seq: index[seq])
+        if not inputs["cached"].all():
+            model = Koina(experiment.config.model_irt, experiment.config.koina_host)
+            df = model.predict(inputs.loc[~inputs["cached"]], df_output=True)
+            logger.info("Predicted RT for %d peptides", df.shape[0])
+            self.save_rt_predictions(df, index)
+            logger.info("RT caching complete, total cache size is now %d", len(index))
+            if inputs["cached"].any():
+                df = pd.concat([inputs.loc[inputs["cached"]], df], axis=0)
+
+        else:
+            logger.info("All RTs are cached, skipping prediction")
+            df = inputs
         df["m/z"] = df["peptide_sequences"].apply(
             lambda seq: cmass.fast_mass(seq, charge=experiment.config.charge)
         )
