@@ -3,6 +3,7 @@ import pandas as pd
 from koinapy import Koina
 from .utils import Fixture, SpectrumIndex, RTIndex, IMIndex
 from pyteomics import cmass
+import threading
 import logging
 
 if TYPE_CHECKING:
@@ -58,11 +59,18 @@ class PredictedSpectrumCollection(Fixture):
 
 class MzIrtDataFrame(Fixture):
     @staticmethod
-    def save_predictions(df: pd.DataFrame, name: str, index: "Index") -> None:
+    def _write_to_cache(df: pd.DataFrame, name: str, index: "Index") -> None:
         with index.transact():
             for _, row in df.iterrows():
                 index[row["peptide_sequences"]] = row[name]
-        logger.info("Saved %d %s predictions to cache.", df.shape[0], name)
+        logger.info("Saved %d %s predictions to cache", df.shape[0], name)
+
+    @staticmethod
+    def save_predictions(df: pd.DataFrame, name: str, index: "Index") -> None:
+        t = threading.Thread(
+            target=MzIrtDataFrame._write_to_cache, args=(df, name, index)
+        )
+        t.start()
 
     def get_predictions(
         self, name: str, index: "Index", inputs: pd.DataFrame, experiment: "Experiment"
@@ -82,13 +90,14 @@ class MzIrtDataFrame(Fixture):
             )
             df = model.predict(inputs.loc[~cached], df_output=True)
             logger.info("Predicted %s for %d peptides.", name, df.shape[0])
-            self.save_predictions(df, name, index)
+            self.save_queue.append((df, name, index))
             inputs[name] = df[name]
         else:
             logger.info("All %s values are cached, skipping prediction", name)
-        inputs.loc[cached, name] = inputs["peptide_sequences"].apply(
-            lambda seq: index[seq]
-        )
+        if cached.any():
+            inputs.loc[cached, name] = inputs.loc[cached, "peptide_sequences"].apply(
+                lambda seq: index[seq]
+            )
 
     def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
         input_file = experiment.config.input_file
@@ -110,6 +119,7 @@ class MzIrtDataFrame(Fixture):
                 )
             df = df.loc[~unsupported].reset_index(drop=True)
 
+        self.save_queue = []
         index = RTIndex(experiment=experiment)
         self.get_predictions("irt", index, df, experiment)
 
@@ -122,4 +132,7 @@ class MzIrtDataFrame(Fixture):
             lambda seq: cmass.fast_mass(seq, charge=experiment.config.charge)
         )
         df["collision_energies"] = experiment.config.collision_energy
+        for item in self.save_queue:
+            self.save_predictions(*item)
+        del self.save_queue
         return df
