@@ -6,6 +6,7 @@ import multiprocessing as mp
 import diskcache
 from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING
+from types import UnionType
 
 if TYPE_CHECKING:
     from .experiment import Experiment
@@ -28,31 +29,45 @@ class Fixture(ABC):
 
 @dataclass(frozen=True, slots=True)
 class BaseConfig:
+    @staticmethod
+    def get_type(ftype):
+        if isinstance(ftype, UnionType):
+            return ftype.__args__[0]
+        return ftype
+
+    @staticmethod
+    def get_required(field):
+        if isinstance(field.type, UnionType):
+            return field.default is None and type(None) not in field.type.__args__
+        return field.default is None
+
     @classmethod
     def argparser(cls) -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser(description="Experiment configuration")
         for field in fields(cls):
             parser.add_argument(
                 f"--{field.name.replace('_', '-')}",
-                type=field.type,
+                type=cls.get_type(field.type),
                 default=field.default,
-                required=field.default is None,
+                required=cls.get_required(field),
             )
         return parser
 
 
 @dataclass(frozen=True, slots=True)
 class Config(BaseConfig):
-    # workdir: Path
     input_file: Path
     collision_energy: int = 30
     charge: int = 2
     model_intensity: str = "Prosit_2020_intensity_HCD"
     model_irt: str = "Prosit_2019_irt"
+    model_ccs: str | None = None
     mz_tolerance: float = 1.0
     irt_tolerance: float = 5.0
     peak_tolerance: float = 0.0
     peak_ppm: float = 10.0
+    ccs_tolerance: float = 5.0
+    nonstandard_amino_acids: bool = False
     koina_host: str = "koina.wilhelmlab.org:443"
     cache_dir: Path = Path(".")
     workers: int = mp.cpu_count()
@@ -85,12 +100,16 @@ class Index(diskcache.Index, ABC):
 class SpectrumIndex(Index):
     def _full_key(self, key: str) -> tuple:
         config = self.experiment.config
-        # key is peptide sequence, we need to add collision energy, charge and model info to the key
         return (key, config.collision_energy, config.charge, config.model_intensity)
 
 
 class RTIndex(Index):
     def _full_key(self, key: str) -> tuple:
         config = self.experiment.config
-        # key is peptide sequence, we need to add model info to the key
         return (key, config.model_irt)
+
+
+class IMIndex(Index):
+    def _full_key(self, key: str) -> tuple:
+        config = self.experiment.config
+        return (key, config.charge, config.model_ccs)
