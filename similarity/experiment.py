@@ -26,7 +26,7 @@ class Experiment:
         logger.debug("Found %d pairs", len(self.pairs))
         logger.info("Start predicting spectra...")
         logger.debug("Predicted spectra: %s", self.predicted_spectra)
-        logger.info("Predicted spectra size: %d", len(self.predicted_spectra))
+        logger.info("Predicted spectra complete.")
         logger.info("Start processing pairs...")
-        logger.info("Processed pairs shape: %s", self.processed_pairs.shape)
+        logger.info("Processed %d pairs.", self.processed_pairs.shape[0])
         return self.processed_pairs

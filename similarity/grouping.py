@@ -11,43 +11,34 @@ logger = logging.getLogger(__name__)
 
 
 class SpectrumGrouping(Fixture):
+    def process_neighbors(
+        self, neighbors: list[list[int]], experiment: "Experiment"
+    ) -> list[tuple[int, int]]:
+        mzrt = experiment.mz_irt_df[["m/z", "irt"]].values
+        pairs = []
+        inpairs = np.zeros(len(experiment.mz_irt_df), dtype=bool)
+        for i, indices in enumerate(neighbors):
+            for j in indices:
+                if i < j:  # Avoid self-pairing and duplicate pairs
+                    if (
+                        abs(mzrt[i, 0] - mzrt[j, 0]) <= experiment.config.mz_tolerance
+                        and abs(mzrt[i, 1] - mzrt[j, 1])
+                        <= experiment.config.irt_tolerance
+                    ):
+                        pairs.append((i, j))
+                        inpairs[i] = True
+                        inpairs[j] = True
+        experiment.mz_irt_df["in pairs"] = inpairs
+        logger.info("Total valid pairs found: %d", len(pairs))
+        return pairs
+
     def evaluate(self, experiment: "Experiment") -> list[tuple[int, int]]:
-        # very close to legacy implementation, but not the bottleneck for now
         df = experiment.mz_irt_df
         df["in pairs"] = False  # Add a column to track if a spectrum is in any pair
         tree = cKDTree(df[["m/z", "irt"]].values)
-        logger.debug("Built cKDTree with %d nodes from %d points", tree.size, tree.n)
+        logger.info("Built cKDTree with %d nodes from %d points", tree.size, tree.n)
         radius = np.sqrt(
             experiment.config.mz_tolerance**2 + experiment.config.irt_tolerance**2
         )
-        pairs = []
-        for i, row in df.iterrows():
-            mz, irt = row["m/z"], row["irt"]
-            indices = tree.query_ball_point([mz, irt], radius)
-            logger.debug(
-                "Found %d neighbors for index %d (m/z: %.2f, irt: %.2f)",
-                len(indices),
-                i,
-                mz,
-                irt,
-            )
-            for j in indices:
-                if i < j:  # Avoid self-pairing and duplicate pairs
-                    logger.debug("Processing pair: index1=%d, index2=%d", i, j)
-                    if (
-                        abs(mz - df.loc[j, "m/z"]) <= experiment.config.mz_tolerance
-                        and abs(irt - df.loc[j, "irt"])
-                        <= experiment.config.irt_tolerance
-                    ):
-                        logger.debug(
-                            "Pair (index1=%d, index2=%d) is within tolerance", i, j
-                        )
-                        pairs.append((i, j))
-                        df.loc[i, "in pairs"] = True
-                        df.loc[j, "in pairs"] = True
-                    else:
-                        logger.debug(
-                            "Pair (index1=%d, index2=%d) is NOT within tolerance", i, j
-                        )
-        logger.debug("Total valid pairs found: %d", len(pairs))
-        return pairs
+        neightbors = tree.query_ball_tree(tree, r=radius)
+        return self.process_neighbors(neightbors, experiment)

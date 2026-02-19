@@ -35,7 +35,6 @@ class PredictedSpectrumCollection(Fixture):
         index = SpectrumIndex(experiment=experiment)
         # make sure pairs are calculated
         experiment.pairs
-        logger.info("Found cache with %d entries", len(index))
         df["cached"] = df["peptide_sequences"].apply(lambda seq: seq in index)
         logger.info(
             "Dropping %d peptides not in any pairs", (df["in pairs"] == False).sum()
@@ -52,7 +51,7 @@ class PredictedSpectrumCollection(Fixture):
         data = self.process_predictions(prediction_inputs, result)
         logger.info("Saving predictions to cache...")
         self.save_predictions(data, index)
-        logger.info("Caching complete, total cache size is now %d", len(index))
+        logger.info("Caching complete.")
         return index
 
 
@@ -94,9 +93,9 @@ class MzIrtDataFrame(Fixture):
         if not inputs["cached"].all():
             model = Koina(experiment.config.model_irt, experiment.config.koina_host)
             df = model.predict(inputs.loc[~inputs["cached"]], df_output=True)
-            logger.info("Predicted RT for %d peptides", df.shape[0])
+            logger.info("Predicted RT for %d peptides.", df.shape[0])
             self.save_rt_predictions(df, index)
-            logger.info("RT caching complete, total cache size is now %d", len(index))
+            logger.info("RT caching complete")
             if inputs["cached"].any():
                 df = pd.concat([inputs.loc[inputs["cached"]], df], axis=0)
 
