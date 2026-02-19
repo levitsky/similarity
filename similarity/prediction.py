@@ -1,13 +1,14 @@
 from typing import TYPE_CHECKING
 import pandas as pd
 from koinapy import Koina
-from .utils import Fixture, SpectrumIndex, RTIndex
+from .utils import Fixture, SpectrumIndex, RTIndex, IMIndex
 from pyteomics import cmass
 import logging
 
 if TYPE_CHECKING:
     import numpy as np
     from .experiment import Experiment
+    from .utils import Index
 
 logger = logging.getLogger(__name__)
 
@@ -57,54 +58,68 @@ class PredictedSpectrumCollection(Fixture):
 
 class MzIrtDataFrame(Fixture):
     @staticmethod
-    def save_rt_predictions(df: pd.DataFrame, index: RTIndex) -> None:
+    def save_predictions(df: pd.DataFrame, name: str, index: "Index") -> None:
         with index.transact():
             for _, row in df.iterrows():
-                index[row["peptide_sequences"]] = row["irt"]
+                index[row["peptide_sequences"]] = row[name]
+        logger.info("Saved %d %s predictions to cache.", df.shape[0], name)
+
+    def get_predictions(
+        self, name: str, index: "Index", inputs: pd.DataFrame, experiment: "Experiment"
+    ) -> None:
+        cached = inputs["peptide_sequences"].apply(lambda seq: seq in index)
+        logger.info(
+            "%d of %d peptides are cached for %s prediction",
+            cached.sum(),
+            inputs.shape[0],
+            name,
+        )
+        if not cached.all():
+            logger.info("Predicting %s for %d peptides...", name, (~cached).sum())
+            model = Koina(
+                getattr(experiment.config, f"model_{name}"),
+                experiment.config.koina_host,
+            )
+            df = model.predict(inputs.loc[~cached], df_output=True)
+            logger.info("Predicted %s for %d peptides.", name, df.shape[0])
+            self.save_predictions(df, name, index)
+            inputs[name] = df[name]
+        else:
+            logger.info("All %s values are cached, skipping prediction", name)
+        inputs.loc[cached, name] = inputs["peptide_sequences"].apply(
+            lambda seq: index[seq]
+        )
 
     def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
         input_file = experiment.config.input_file
-        inputs = pd.read_table(input_file, names=["peptide_sequences"], header=None)
-        logger.info("Loaded %d peptide sequences from %s", len(inputs), input_file)
-        inputs.drop_duplicates(inplace=True)
+        df = pd.read_table(input_file, names=["peptide_sequences"], header=None)
+        logger.info("Loaded %d peptide sequences from %s", len(df), input_file)
+        df.drop_duplicates(inplace=True)
         logger.info(
-            "After dropping duplicates, %d unique peptide sequences remain", len(inputs)
+            "After dropping duplicates, %d unique peptide sequences remain", len(df)
         )
-        unsupported = inputs["peptide_sequences"].str.contains(
-            "[^ACDEFGHIKLMNPQRSTVWY]", regex=True
-        )
-        if unsupported.any():
-            logger.warning(
-                "Found %d unsupported peptide sequences, these will be skipped: %s",
-                unsupported.sum(),
-                inputs.loc[unsupported, "peptide_sequences"].tolist(),
+        if not experiment.config.nonstandard_aminoacids:
+            unsupported = df["peptide_sequences"].str.contains(
+                "[^ACDEFGHIKLMNPQRSTVWY]", regex=True
             )
-        inputs = inputs.loc[~unsupported].reset_index(drop=True)
-        index = RTIndex(experiment=experiment)
-        inputs["cached"] = inputs["peptide_sequences"].apply(lambda seq: seq in index)
-        logger.info(
-            "%d of %d peptides are cached for RT prediction",
-            inputs["cached"].sum(),
-            inputs.shape[0],
-        )
-        inputs.loc[inputs["cached"], "irt"] = inputs.loc[
-            inputs["cached"], "peptide_sequences"
-        ].apply(lambda seq: index[seq])
-        if not inputs["cached"].all():
-            model = Koina(experiment.config.model_irt, experiment.config.koina_host)
-            df = model.predict(inputs.loc[~inputs["cached"]], df_output=True)
-            logger.info("Predicted RT for %d peptides.", df.shape[0])
-            self.save_rt_predictions(df, index)
-            logger.info("RT caching complete")
-            if inputs["cached"].any():
-                df = pd.concat([inputs.loc[inputs["cached"]], df], axis=0)
+            if unsupported.any():
+                logger.warning(
+                    "Found %d unsupported peptide sequences, these will be skipped: %s",
+                    unsupported.sum(),
+                    df.loc[unsupported, "peptide_sequences"].tolist(),
+                )
+            df = df.loc[~unsupported].reset_index(drop=True)
 
-        else:
-            logger.info("All RTs are cached, skipping prediction")
-            df = inputs
+        index = RTIndex(experiment=experiment)
+        self.get_predictions("irt", index, df, experiment)
+
+        df["precursor_charges"] = experiment.config.charge
+        if experiment.config.model_ccs is not None:
+            index = IMIndex(experiment=experiment)
+            self.get_predictions("ccs", index, df, experiment)
+
         df["m/z"] = df["peptide_sequences"].apply(
             lambda seq: cmass.fast_mass(seq, charge=experiment.config.charge)
         )
-        df["precursor_charges"] = experiment.config.charge
         df["collision_energies"] = experiment.config.collision_energy
         return df
