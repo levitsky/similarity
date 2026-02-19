@@ -126,22 +126,35 @@ class ProcessedPairs(Fixture):
 
     def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
         index_array = experiment.pairs
-        in_queue = mp.Queue()
-        out_queue = mp.Queue()
-        workers = [
-            ScoringWorker(in_queue, out_queue, experiment=experiment)
-            for _ in range(experiment.config.workers)
-        ]
-        for worker in workers:
-            worker.start()
-        for i, j in index_array:
-            in_queue.put((i, j))
-        for _ in workers:
-            in_queue.put(None)
         results = []
-        for _ in index_array:
-            i, j, score = out_queue.get()
-            results.append(self.format_result(i, j, score, experiment))
-        for worker in workers:
-            worker.join()
+        if experiment.config.workers > 1:
+            logger.info(
+                "Scoring %d pairs with %d workers...",
+                len(index_array),
+                experiment.config.workers,
+            )
+            in_queue = mp.Queue()
+            out_queue = mp.Queue()
+            workers = [
+                ScoringWorker(in_queue, out_queue, experiment=experiment)
+                for _ in range(experiment.config.workers)
+            ]
+            for worker in workers:
+                worker.start()
+            for i, j in index_array:
+                in_queue.put((i, j))
+            for _ in workers:
+                in_queue.put(None)
+
+            for _ in index_array:
+                i, j, score = out_queue.get()
+                results.append(self.format_result(i, j, score, experiment))
+            for worker in workers:
+                worker.join()
+        else:
+            logger.info("Scoring %d pairs with a single worker...", len(index_array))
+            for i, j in index_array:
+                w = ScoringWorker(None, None, experiment=experiment)
+                score = ScoringWorker.score_pair(w, i, j)
+                results.append(self.format_result(i, j, score, experiment))
         return pd.DataFrame(results)
