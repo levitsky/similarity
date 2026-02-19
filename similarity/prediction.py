@@ -98,7 +98,7 @@ class MzIrtDataFrame(Fixture):
         logger.info(
             "After dropping duplicates, %d unique peptide sequences remain", len(df)
         )
-        if not experiment.config.nonstandard_amino_acids:
+        if not experiment.config.nonstandard_aminoacids:
             unsupported = df["peptide_sequences"].str.contains(
                 "[^ACDEFGHIKLMNPQRSTVWY]", regex=True
             )

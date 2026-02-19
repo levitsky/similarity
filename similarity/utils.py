@@ -45,12 +45,13 @@ class BaseConfig:
     def argparser(cls) -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser(description="Experiment configuration")
         for field in fields(cls):
-            parser.add_argument(
-                f"--{field.name.replace('_', '-')}",
-                type=cls.get_type(field.type),
-                default=field.default,
-                required=cls.get_required(field),
-            )
+            kw = dict(default=field.default, required=cls.get_required(field))
+            if field.type is bool:
+                # for bools, use action='store_true' and default to False
+                kw["action"] = "store_true"
+            else:
+                kw["type"] = cls.get_type(field.type)
+            parser.add_argument(f"--{field.name.replace('_', '-')}", **kw)
         return parser
 
 
@@ -66,8 +67,8 @@ class Config(BaseConfig):
     irt_tolerance: float = 5.0
     peak_tolerance: float = 0.0
     peak_ppm: float = 10.0
-    ccs_tolerance: float = 5.0
-    nonstandard_amino_acids: bool = False
+    ccs_rtolerance: float = 0.02
+    nonstandard_aminoacids: bool = False
     koina_host: str = "koina.wilhelmlab.org:443"
     cache_dir: Path = Path(".")
     workers: int = mp.cpu_count()

@@ -22,7 +22,8 @@ class SpectrumGrouping(Fixture):
         mz_tol = experiment.config.mz_tolerance
         irt_tol = experiment.config.irt_tolerance
         if experiment.config.model_ccs is not None:
-            ccs_tol = experiment.config.ccs_tolerance
+            ccs_rtol = experiment.config.ccs_rtolerance
+            ccs_tol = ccs_rtol * experiment.mz_irt_df["ccs"].max()
             return np.sqrt(mz_tol**2 + irt_tol**2 + ccs_tol**2)
         return np.sqrt(mz_tol**2 + irt_tol**2)
 
@@ -41,11 +42,11 @@ class SpectrumGrouping(Fixture):
     ) -> bool:
         mz_tol = experiment.config.mz_tolerance
         irt_tol = experiment.config.irt_tolerance
-        ccs_tol = experiment.config.ccs_tolerance
+        ccs_rtol = experiment.config.ccs_rtolerance
         return (
             abs(arr[i, 0] - arr[j, 0]) <= mz_tol
             and abs(arr[i, 1] - arr[j, 1]) <= irt_tol
-            and abs(arr[i, 2] - arr[j, 2]) <= ccs_tol
+            and abs(arr[i, 2] - arr[j, 2]) <= ccs_rtol * max(arr[i, 2], arr[j, 2])
         )
 
     def tolerance_check(self, experiment: "Experiment"):
