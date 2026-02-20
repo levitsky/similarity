@@ -114,3 +114,17 @@ class IMIndex(Index):
     def _full_key(self, key: str) -> tuple:
         config = self.experiment.config
         return (key, config.charge, config.model_ccs)
+
+
+class ExperimentWorker(mp.Process):
+    def __init__(
+        self, task_queue: mp.Queue, result_queue: mp.Queue, experiment: "Experiment"
+    ):
+        super().__init__()
+        self.task_queue = task_queue
+        self.result_queue = result_queue
+        self.experiment = experiment
+
+    @abstractmethod
+    def run(self) -> None:
+        return super().run()

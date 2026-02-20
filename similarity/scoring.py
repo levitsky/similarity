@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import logging
 import multiprocessing as mp
-from .utils import Fixture, Index
+from .utils import Fixture, ExperimentWorker
 
 if TYPE_CHECKING:
     from .experiment import Experiment
@@ -11,17 +11,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class ScoringWorker(mp.Process):
-    def __init__(
-        self,
-        task_queue: mp.Queue,
-        result_queue: mp.Queue,
-        experiment: "Experiment",
-    ):
-        super().__init__()
-        self.task_queue = task_queue
-        self.result_queue = result_queue
-        self.experiment = experiment
+class ScoringWorker(ExperimentWorker):
 
     @staticmethod
     def match_peaks(mz1: np.ndarray, mz2: np.ndarray, atol: float, rtol: float):
