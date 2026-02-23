@@ -82,9 +82,17 @@ class Index(diskcache.Index, ABC):
     def _full_key(self, key: str) -> tuple:
         pass
 
+    def __new__(cls, experiment: "Experiment", *args, **kwargs):
+        assert (
+            experiment._cache is not None
+        ), "Experiment cache must be initialized before creating Index"
+        instance = super().__new__(cls)
+        instance._cache = experiment._cache
+        return instance
+
     def __init__(self, experiment: "Experiment"):
         self.experiment = experiment
-        super().__init__(str(experiment.config.cache_dir))
+        # not calling super().__init__() because it would reassign self._cache
 
     def __getitem__(self, key: str) -> Any:
         full_key = self._full_key(key)
@@ -100,21 +108,24 @@ class Index(diskcache.Index, ABC):
 
 
 class SpectrumIndex(Index):
-    def _full_key(self, key: str) -> tuple:
+    def _full_key(self, key: str) -> bytes:
         config = self.experiment.config
-        return (key, config.collision_energy, config.charge, config.model_intensity)
+        return bytes(
+            f"{key}_{config.collision_energy}_{config.charge}_{config.model_intensity}",
+            "ascii",
+        )
 
 
 class RTIndex(Index):
-    def _full_key(self, key: str) -> tuple:
+    def _full_key(self, key: str) -> bytes:
         config = self.experiment.config
-        return (key, config.model_irt)
+        return bytes(f"{key}_{config.model_irt}", "ascii")
 
 
 class IMIndex(Index):
-    def _full_key(self, key: str) -> tuple:
+    def _full_key(self, key: str) -> bytes:
         config = self.experiment.config
-        return (key, config.charge, config.model_ccs)
+        return bytes(f"{key}_{config.charge}_{config.model_ccs}", "ascii")
 
 
 class ExperimentWorker(ABC, mp.Process):

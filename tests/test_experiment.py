@@ -47,7 +47,7 @@ def _weightxy(x, y, m=0, n=0.5):
 
 class TestBase(unittest.TestCase):
     def setUp(self):
-        self.config = Config(input_file=Path("tests/test_peptides.txt", batch_size=2))
+        self.config = Config(input_file=Path("tests/test_peptides.txt"), batch_size=2)
         logging.basicConfig(
             level=logging.DEBUG,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
