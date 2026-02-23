@@ -1,6 +1,7 @@
 import unittest
 import numpy as np
 import pandas as pd
+import dataclasses
 from similarity.experiment import Experiment
 from similarity.scoring import ScoringWorker
 from similarity.utils import Config
@@ -46,7 +47,7 @@ def _weightxy(x, y, m=0, n=0.5):
 
 class TestBase(unittest.TestCase):
     def setUp(self):
-        self.config = Config(input_file=Path("tests/test_peptides.txt"))
+        self.config = Config(input_file=Path("tests/test_peptides.txt", batch_size=2))
         logging.basicConfig(
             level=logging.DEBUG,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -58,28 +59,33 @@ class TestBase(unittest.TestCase):
 class ExperimentTest(TestBase):
     def test_run(self):
         """Test that Experiment.run() executes and returns something."""
-        exp = Experiment(self.config)
-        result = exp.run().sort_values(["index1", "index2"])
-        # Check that run() returns the processed_pairs object
-        self.logger.debug("Final result:\n%s", result)
-        self.assertEqual(result.shape[0], 9)  # Assuming 9 pairs based on the test input
-        self.assertTrue(
-            np.allclose(
-                result["similarity score"],
-                [
-                    0.847243,
-                    0.816326,
-                    0.724647,
-                    0.912134,
-                    0.772697,
-                    0.81768,
-                    0.974192,
-                    0.858346,
-                    0.933183,
-                ],
-                atol=1e-3,
-            )
-        )
+        for workers in [1, 4]:
+            with self.subTest(workers=workers):
+                config = dataclasses.replace(self.config, workers=workers)
+                exp = Experiment(config)
+                result = exp.run().sort_values(["index1", "index2"])
+                # Check that run() returns the processed_pairs object
+                self.logger.debug("Final result:\n%s", result)
+                self.assertEqual(
+                    result.shape[0], 9
+                )  # Assuming 9 pairs based on the test input
+                self.assertTrue(
+                    np.allclose(
+                        result["similarity score"],
+                        [
+                            0.847243,
+                            0.816326,
+                            0.724647,
+                            0.912134,
+                            0.772697,
+                            0.81768,
+                            0.974192,
+                            0.858346,
+                            0.933183,
+                        ],
+                        atol=1e-3,
+                    )
+                )
 
 
 class EquivalenceTest(TestBase):
@@ -91,142 +97,148 @@ class EquivalenceTest(TestBase):
     def test_peak_matching(self):
         """Test that the peak matching logic correctly identifies matching peaks."""
         exp = Experiment(self.config)
-        spectra = exp.predicted_spectra
-        for i, j in exp.pairs:
-            with self.subTest(pair=(i, j)):
-                pep1 = exp.mz_irt_df.loc[i, "peptide_sequences"]
-                pep2 = exp.mz_irt_df.loc[j, "peptide_sequences"]
-                mz1, intensities1 = exp.predicted_spectra[pep1]
-                mz2, intensities2 = exp.predicted_spectra[pep2]
-                self.logger.debug(
-                    "Testing peak matching for peptides %d, %d: %s and %s",
-                    i,
-                    j,
-                    pep1,
-                    pep2,
-                )
-                self.logger.debug("m/z values for peptide 1: %s", mz1)
-                self.logger.debug("m/z values for peptide 2: %s", mz2)
-                idx1, idx2 = ScoringWorker.match_peaks(
-                    mz1,
-                    mz2,
-                    atol=0.1,
-                    rtol=0.0005,
-                )
-                self.logger.debug("Matched indices: %s and %s", idx1, idx2)
-                self.logger.debug(
-                    "Matched m/z values:\n%s and\n%s",
-                    np.sort(mz1[idx1]),
-                    np.sort(mz2[idx2]),
-                )
-
-                matcher = joinPeaks(
-                    tolerance=self.config.peak_tolerance, ppm=self.config.peak_ppm
-                )
-                x_df = (
-                    pd.DataFrame({"mz": mz1, "intensities": intensities1})
-                    .sort_values(by="mz")
-                    .reset_index(drop=True)
-                )
-                y_df = (
-                    pd.DataFrame({"mz": mz2, "intensities": intensities2})
-                    .sort_values(by="mz")
-                    .reset_index(drop=True)
-                )
-                x_matched, y_matched = matcher.match(x_df, y_df)
-                mask = pd.notna(x_matched["mz"]) & pd.notna(y_matched["mz"])
-
-                self.logger.debug(
-                    "Matched m/z values using joinPeaks:\n%s and \n%s",
-                    np.sort(x_matched.loc[mask, "mz"].values),
-                    np.sort(y_matched.loc[mask, "mz"].values),
-                )
-                self.logger.debug(
-                    "Matched m/z values using match_peaks:\n%s and \n%s",
-                    np.sort(mz1[idx1]),
-                    np.sort(mz2[idx2]),
-                )
-                if idx1.size == x_matched.shape[0] and idx2.size == y_matched.shape[0]:
-                    self.assertTrue(
-                        np.allclose(
-                            x_matched.loc[mask, "mz"].values,
-                            np.sort(mz1[idx1]),
-                            atol=0.01,
-                            rtol=0.0005,
-                        )
-                    )
-                    self.assertTrue(
-                        np.allclose(
-                            y_matched.loc[mask, "mz"].values,
-                            np.sort(mz2[idx2]),
-                            atol=0.01,
-                            rtol=0.0005,
-                        )
-                    )
-                else:
-                    self.logger.warning(
-                        "Number of matched peaks differs between joinPeaks and match_peaks for pair (%d, %d). Matching m/z:\njoinPeaks:\n%s and \n%s\nmatch_peaks:\n%s and \n%s",
+        for i, indices in exp.pairs:
+            for j in indices:
+                with self.subTest(pair=(i, j)):
+                    pep1 = exp.mz_irt_df.loc[i, "peptide_sequences"]
+                    pep2 = exp.mz_irt_df.loc[j, "peptide_sequences"]
+                    mz1, intensities1 = exp.predicted_spectra[pep1]
+                    mz2, intensities2 = exp.predicted_spectra[pep2]
+                    self.logger.debug(
+                        "Testing peak matching for peptides %d, %d: %s and %s",
                         i,
                         j,
-                        x_matched.loc[mask, "mz"].values,
-                        y_matched.loc[mask, "mz"].values,
+                        pep1,
+                        pep2,
+                    )
+                    self.logger.debug("m/z values for peptide 1: %s", mz1)
+                    self.logger.debug("m/z values for peptide 2: %s", mz2)
+                    idx1, idx2 = ScoringWorker.match_peaks(
+                        mz1,
+                        mz2,
+                        atol=0.1,
+                        rtol=0.0005,
+                    )
+                    self.logger.debug("Matched indices: %s and %s", idx1, idx2)
+                    self.logger.debug(
+                        "Matched m/z values:\n%s and\n%s",
                         np.sort(mz1[idx1]),
                         np.sort(mz2[idx2]),
                     )
-                    self.skipTest(
-                        f"Incompatible match output. Skipping test for pair ({i}, {j})."
+
+                    matcher = joinPeaks(
+                        tolerance=self.config.peak_tolerance, ppm=self.config.peak_ppm
                     )
+                    x_df = (
+                        pd.DataFrame({"mz": mz1, "intensities": intensities1})
+                        .sort_values(by="mz")
+                        .reset_index(drop=True)
+                    )
+                    y_df = (
+                        pd.DataFrame({"mz": mz2, "intensities": intensities2})
+                        .sort_values(by="mz")
+                        .reset_index(drop=True)
+                    )
+                    x_matched, y_matched = matcher.match(x_df, y_df)
+                    mask = pd.notna(x_matched["mz"]) & pd.notna(y_matched["mz"])
+
+                    self.logger.debug(
+                        "Matched m/z values using joinPeaks:\n%s and \n%s",
+                        np.sort(x_matched.loc[mask, "mz"].values),
+                        np.sort(y_matched.loc[mask, "mz"].values),
+                    )
+                    self.logger.debug(
+                        "Matched m/z values using match_peaks:\n%s and \n%s",
+                        np.sort(mz1[idx1]),
+                        np.sort(mz2[idx2]),
+                    )
+                    if (
+                        idx1.size == x_matched.shape[0]
+                        and idx2.size == y_matched.shape[0]
+                    ):
+                        self.assertTrue(
+                            np.allclose(
+                                x_matched.loc[mask, "mz"].values,
+                                np.sort(mz1[idx1]),
+                                atol=0.01,
+                                rtol=0.0005,
+                            )
+                        )
+                        self.assertTrue(
+                            np.allclose(
+                                y_matched.loc[mask, "mz"].values,
+                                np.sort(mz2[idx2]),
+                                atol=0.01,
+                                rtol=0.0005,
+                            )
+                        )
+                    else:
+                        self.logger.warning(
+                            "Number of matched peaks differs between joinPeaks and match_peaks for pair (%d, %d). Matching m/z:\njoinPeaks:\n%s and \n%s\nmatch_peaks:\n%s and \n%s",
+                            i,
+                            j,
+                            x_matched.loc[mask, "mz"].values,
+                            y_matched.loc[mask, "mz"].values,
+                            np.sort(mz1[idx1]),
+                            np.sort(mz2[idx2]),
+                        )
+                        self.skipTest(
+                            f"Incompatible match output. Skipping test for pair ({i}, {j})."
+                        )
 
     def test_similarity_score(self):
         """Test that the similarity score is calculated correctly."""
         exp = Experiment(self.config)
         spectra = exp.predicted_spectra
         pairs = exp.pairs
-        for i, j in pairs:
-            with self.subTest(pair=(i, j)):
-                pep1 = exp.mz_irt_df.loc[i, "peptide_sequences"]
-                pep2 = exp.mz_irt_df.loc[j, "peptide_sequences"]
-                matcher = joinPeaks(
-                    tolerance=self.config.peak_tolerance, ppm=self.config.peak_ppm
-                )
-                x_df = (
-                    pd.DataFrame(
-                        {"mz": spectra[pep1][0], "intensities": spectra[pep1][1]}
+        for i, indices in pairs:
+            for j in indices:
+                with self.subTest(pair=(i, j)):
+                    pep1 = exp.mz_irt_df.loc[i, "peptide_sequences"]
+                    pep2 = exp.mz_irt_df.loc[j, "peptide_sequences"]
+                    matcher = joinPeaks(
+                        tolerance=self.config.peak_tolerance, ppm=self.config.peak_ppm
                     )
-                    .sort_values(by="mz")
-                    .reset_index(drop=True)
-                )
-                y_df = (
-                    pd.DataFrame(
-                        {"mz": spectra[pep2][0], "intensities": spectra[pep2][1]}
+                    x_df = (
+                        pd.DataFrame(
+                            {"mz": spectra[pep1][0], "intensities": spectra[pep1][1]}
+                        )
+                        .sort_values(by="mz")
+                        .reset_index(drop=True)
                     )
-                    .sort_values(by="mz")
-                    .reset_index(drop=True)
-                )
-                x_matched, y_matched = matcher.match(x_df, y_df)
-                oldscore = nspectraangle(x_matched, y_matched, m=0, n=0.5)
+                    y_df = (
+                        pd.DataFrame(
+                            {"mz": spectra[pep2][0], "intensities": spectra[pep2][1]}
+                        )
+                        .sort_values(by="mz")
+                        .reset_index(drop=True)
+                    )
+                    x_matched, y_matched = matcher.match(x_df, y_df)
+                    oldscore = nspectraangle(x_matched, y_matched, m=0, n=0.5)
 
-                idx1, idx2 = ScoringWorker.match_peaks(
-                    x_df["mz"].values,
-                    y_df["mz"].values,
-                    atol=self.config.peak_tolerance,
-                    rtol=self.config.peak_ppm / 1e6,
-                )
-                newscore = ScoringWorker.similarity_score(
-                    x_df["intensities"].values,
-                    y_df["intensities"].values,
-                    idx1,
-                    idx2,
-                )
-                self.logger.debug(
-                    "Testing similarity score for peptides %d, %d: %s and %s",
-                    i,
-                    j,
-                    pep1,
-                    pep2,
-                )
-                self.logger.debug("Old score: %f, New score: %f", oldscore, newscore)
-                self.assertAlmostEqual(oldscore, newscore, places=3)
+                    idx1, idx2 = ScoringWorker.match_peaks(
+                        x_df["mz"].values,
+                        y_df["mz"].values,
+                        atol=self.config.peak_tolerance,
+                        rtol=self.config.peak_ppm / 1e6,
+                    )
+                    newscore = ScoringWorker.similarity_score(
+                        x_df["intensities"].values,
+                        y_df["intensities"].values,
+                        idx1,
+                        idx2,
+                    )
+                    self.logger.debug(
+                        "Testing similarity score for peptides %d, %d: %s and %s",
+                        i,
+                        j,
+                        pep1,
+                        pep2,
+                    )
+                    self.logger.debug(
+                        "Old score: %f, New score: %f", oldscore, newscore
+                    )
+                    self.assertAlmostEqual(oldscore, newscore, places=3)
 
 
 if __name__ == "__main__":

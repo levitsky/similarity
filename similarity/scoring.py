@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class ScoringWorker(ExperimentWorker):
+    experiment: "Experiment"
 
     @staticmethod
     def match_peaks(mz1: np.ndarray, mz2: np.ndarray, atol: float, rtol: float):
@@ -89,9 +90,10 @@ class ScoringWorker(ExperimentWorker):
             task = self.task_queue.get()
             if task is None:
                 break
-            i, j = task
-            score = self.score_pair(i, j)
-            self.result_queue.put((i, j, score))
+            i, indices = task
+            for j in indices:
+                score = self.score_pair(i, j)
+                self.result_queue.put((i, j, score))
 
 
 class ProcessedPairs(Fixture):
@@ -120,7 +122,7 @@ class ProcessedPairs(Fixture):
         if experiment.config.workers > 1:
             logger.info(
                 "Scoring %d pairs with %d workers...",
-                len(index_array),
+                sum(len(indices) for _, indices in index_array),
                 experiment.config.workers,
             )
             in_queue = mp.Queue()
@@ -131,20 +133,33 @@ class ProcessedPairs(Fixture):
             ]
             for worker in workers:
                 worker.start()
-            for i, j in index_array:
-                in_queue.put((i, j))
+            count = 0
+            for i, indices in index_array:
+                in_queue.put((i, indices))
+                count += len(indices)
             for _ in workers:
                 in_queue.put(None)
 
-            for _ in index_array:
+            for idx in range(count):
                 i, j, score = out_queue.get()
                 results.append(self.format_result(i, j, score, experiment))
+                if idx != 0 and idx % experiment.config.batch_size == 0:
+                    logger.info("Processed %d / %d pairs...", len(results), count)
             for worker in workers:
                 worker.join()
         else:
-            logger.info("Scoring %d pairs with a single worker...", len(index_array))
-            for i, j in index_array:
-                w = ScoringWorker(None, None, experiment=experiment)
-                score = ScoringWorker.score_pair(w, i, j)
-                results.append(self.format_result(i, j, score, experiment))
+            logger.info(
+                "Scoring %d pairs with a single worker...",
+                sum(len(indices) for _, indices in index_array),
+            )
+            w = ScoringWorker(None, None, experiment=experiment)
+            idx = 0
+            for i, indices in index_array:
+                for j in indices:
+                    idx += 1
+                    score = ScoringWorker.score_pair(w, i, j)
+                    results.append(self.format_result(i, j, score, experiment))
+                    if idx % experiment.config.batch_size == 0:
+                        logger.info("Processed %d pairs...", idx)
+
         return pd.DataFrame(results)
