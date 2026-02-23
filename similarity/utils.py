@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class Fixture(ABC):
-    """A descriptor for a calculation result. Placeholder for caching implementation."""
+    """A descriptor for a calculation result. The result is calculated lazily on first access and then cached for subsequent accesses."""
 
     _data: Any = None
 
@@ -72,6 +72,7 @@ class Config(BaseConfig):
     koina_host: str = "koina.wilhelmlab.org:443"
     cache_dir: Path = Path(".")
     workers: int = mp.cpu_count()
+    batch_size: int = 100000
 
 
 class Index(diskcache.Index, ABC):
@@ -116,14 +117,13 @@ class IMIndex(Index):
         return (key, config.charge, config.model_ccs)
 
 
-class ExperimentWorker(mp.Process):
-    def __init__(
-        self, task_queue: mp.Queue, result_queue: mp.Queue, experiment: "Experiment"
-    ):
+class ExperimentWorker(ABC, mp.Process):
+    def __init__(self, task_queue: mp.Queue, result_queue: mp.Queue, **kwargs):
         super().__init__()
         self.task_queue = task_queue
         self.result_queue = result_queue
-        self.experiment = experiment
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
     @abstractmethod
     def run(self) -> None:
