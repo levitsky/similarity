@@ -74,13 +74,13 @@ class SpectrumGrouping(Fixture):
 
     def get_array(self, experiment: "Experiment") -> np.ndarray:
         if experiment.config.model_ccs is not None:
-            mzrt = experiment.mz_irt_df[["m/z", "irt", "ccs"]].values
+            mzrt = experiment.peptides[["m/z", "irt", "ccs"]].values
         else:
-            mzrt = experiment.mz_irt_df[["m/z", "irt"]].values
+            mzrt = experiment.peptides[["m/z", "irt"]].values
         return mzrt
 
     def kdtree(self, experiment: "Experiment", batch: int | None = None) -> cKDTree:
-        df = experiment.mz_irt_df
+        df = experiment.peptides
         names = ["m/z", "irt"]
         if experiment.config.model_ccs is not None:
             names.append("ccs")
@@ -97,12 +97,12 @@ class SpectrumGrouping(Fixture):
         irt_tol = experiment.config.irt_tolerance
         if experiment.config.model_ccs is not None:
             ccs_rtol = experiment.config.ccs_rtolerance
-            ccs_tol = ccs_rtol * experiment.mz_irt_df["ccs"].max()
+            ccs_tol = ccs_rtol * experiment.peptides["ccs"].max()
             return np.sqrt(mz_tol**2 + irt_tol**2 + ccs_tol**2)
         return np.sqrt(mz_tol**2 + irt_tol**2)
 
     def nbatches(self, experiment: "Experiment") -> int:
-        return math.ceil(len(experiment.mz_irt_df) / experiment.config.batch_size)
+        return math.ceil(len(experiment.peptides) / experiment.config.batch_size)
 
     def process_batch(
         self,
@@ -125,7 +125,7 @@ class SpectrumGrouping(Fixture):
         )
         subtree = self.kdtree(experiment, batch)
 
-        inpairs = np.zeros(len(experiment.mz_irt_df), dtype=bool)
+        inpairs = np.zeros(len(experiment.peptides), dtype=bool)
         offset = batch * experiment.config.batch_size
         logger.debug("Batch idx %d, offset %d", batch, offset)
 
@@ -171,11 +171,11 @@ class SpectrumGrouping(Fixture):
                     for j in indices:
                         inpairs[j] = True
 
-        experiment.mz_irt_df["in pairs"] |= inpairs
+        experiment.peptides["in pairs"] |= inpairs
         return pairs
 
     def evaluate(self, experiment: "Experiment") -> list[tuple[int, list[int]]]:
-        df = experiment.mz_irt_df
+        df = experiment.peptides
         df["in pairs"] = False  # Add a column to track if a spectrum is in any pair
         tree = self.kdtree(experiment)
         logger.info("Built cKDTree with %d nodes from %d points", tree.size, tree.n)

@@ -19,7 +19,7 @@ class PredictedSpectrumCollection(Fixture):
     @staticmethod
     def process_predictions(
         inputs: pd.DataFrame, result: dict[str, "np.ndarray"]
-    ) -> dict[str, "np.ndarray"]:
+    ) -> dict[tuple[str, int], "np.ndarray"]:
         processed = {}
         for i, (peptide, charge) in enumerate(
             inputs[["peptide_sequences", "precursor_charges"]].values
@@ -40,11 +40,11 @@ class PredictedSpectrumCollection(Fixture):
                 index[(peptide, charge)] = mz, intensities
 
     def evaluate(self, experiment: "Experiment") -> SpectrumIndex:
-        df = experiment.mz_irt_df
+        df = experiment.peptides
         index = SpectrumIndex(experiment=experiment)
         # make sure pairs are calculated
         experiment.pairs
-        df["cached"] = df.apply(
+        cached = df.apply(
             lambda row: (row["peptide_sequences"], row["precursor_charges"]) in index,
             axis=1,
         )
@@ -52,12 +52,13 @@ class PredictedSpectrumCollection(Fixture):
             "Dropping %d peptides not in any pairs", (df["in pairs"] == False).sum()
         )
         df = df.loc[df["in pairs"]]
-        logger.info("%d of %d spectra are cached", df["cached"].sum(), len(df))
-        if df["cached"].all():
+        cached = cached.loc[df.index]
+        logger.info("%d of %d spectra are cached", cached.sum(), len(df))
+        if cached.all():
             logger.info("All spectra are cached, skipping prediction")
             return index
         model = Koina(experiment.config.model_intensity, experiment.config.koina_host)
-        prediction_inputs = df.loc[~df["cached"]]
+        prediction_inputs = df.loc[~cached]
         result = model.predict(prediction_inputs, df_output=False)
         logger.info("Preprocessing %d new predictions...", result["mz"].shape[0])
         data = self.process_predictions(prediction_inputs, result)

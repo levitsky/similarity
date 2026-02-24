@@ -60,7 +60,7 @@ class ScoringWorker(ExperimentWorker):
         return score
 
     def score_pair(self, i: int, j: int) -> float:
-        mz_irt_df = self.experiment.mz_irt_df
+        mz_irt_df = self.experiment.peptides
         spectra = self.experiment.predicted_spectra
         pep1 = mz_irt_df.loc[i, "peptide_sequences"]
         charge1 = mz_irt_df.loc[i, "precursor_charges"]
@@ -98,28 +98,10 @@ class ScoringWorker(ExperimentWorker):
                 self.result_queue.put((i, j, score))
 
 
-class ProcessedPairs(Fixture):
-
-    def format_result(
-        self, i: int, j: int, score: float, experiment: "Experiment"
-    ) -> dict:
-        mz_irt_df = experiment.mz_irt_df
-        pep1 = mz_irt_df.loc[i, "peptide_sequences"]
-        pep2 = mz_irt_df.loc[j, "peptide_sequences"]
-        return {
-            "index1": i,
-            "index2": j,
-            "peptide 1": pep1,
-            "peptide 2": pep2,
-            "m/z 1": mz_irt_df.loc[i, "m/z"],
-            "m/z 2": mz_irt_df.loc[j, "m/z"],
-            "iRT 1": mz_irt_df.loc[i, "irt"],
-            "iRT 2": mz_irt_df.loc[j, "irt"],
-            "similarity score": score,
-        }
-
-    def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
+class Scores(Fixture):
+    def evaluate(self, experiment: "Experiment") -> np.ndarray:
         index_array = experiment.pairs
+        dtype = np.dtype([("i", int), ("j", int), ("score", float)])
         # ensure spectrum predictions are calculated
         _ = experiment.predicted_spectra
         logger.debug("Ensured that predicted spectra exist before scoring: %s", _)
@@ -145,11 +127,14 @@ class ProcessedPairs(Fixture):
             for _ in workers:
                 in_queue.put(None)
 
+            scores = np.empty(
+                count, dtype=np.dtype([("i", int), ("j", int), ("score", float)])
+            )
             for idx in range(count):
                 i, j, score = out_queue.get()
-                results.append(self.format_result(i, j, score, experiment))
+                scores[idx] = (i, j, score)
                 if idx != 0 and idx % experiment.config.batch_size == 0:
-                    logger.info("Processed %d / %d pairs...", len(results), count)
+                    logger.info("Processed %d / %d pairs...", idx, count)
             for worker in workers:
                 worker.join()
         else:
@@ -159,12 +144,31 @@ class ProcessedPairs(Fixture):
             )
             w = ScoringWorker(None, None, experiment=experiment)
             idx = 0
+            ilist = []
+            jlist = []
+            scorelist = []
             for i, indices in index_array:
                 for j in indices:
                     idx += 1
                     score = ScoringWorker.score_pair(w, i, j)
-                    results.append(self.format_result(i, j, score, experiment))
+                    ilist.append(i)
+                    jlist.append(j)
+                    scorelist.append(score)
                     if idx % experiment.config.batch_size == 0:
                         logger.info("Processed %d pairs...", idx)
+            scores = np.array(list(zip(ilist, jlist, scorelist)), dtype=dtype)
 
-        return pd.DataFrame(results)
+        return scores
+
+
+class ScoresDataFrame(Fixture):
+    def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
+        peptides = experiment.peptides
+        df = pd.DataFrame.from_records(experiment.score_array)
+        df["peptide 1"] = df["i"].apply(lambda i: peptides.loc[i, "peptide_sequences"])
+        df["peptide 2"] = df["j"].apply(lambda j: peptides.loc[j, "peptide_sequences"])
+        df["m/z 1"] = df["i"].apply(lambda i: peptides.loc[i, "m/z"])
+        df["m/z 2"] = df["j"].apply(lambda j: peptides.loc[j, "m/z"])
+        df["iRT 1"] = df["i"].apply(lambda i: peptides.loc[i, "irt"])
+        df["iRT 2"] = df["j"].apply(lambda j: peptides.loc[j, "irt"])
+        return df
