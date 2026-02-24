@@ -87,6 +87,20 @@ class ExperimentTest(TestBase):
                     )
                 )
 
+    def test_ptms(self):
+        """Test that Experiment can handle peptides with PTMs."""
+        config = Config(
+            ptms=True,
+            input_file=Path("tests/test_peptides_ptms.txt"),
+            model_irt="Prosit_2025_irt_40PTM",
+            model_intensity="Prosit_2025_intensity_40PTM",
+            fragmentation_type="HCD",
+        )
+        exp = Experiment(config)
+        self.assertTrue(np.allclose(exp.mz_irt_df["irt"], [115.689156, 2.694990]))
+        self.assertTrue(np.allclose(exp.mz_irt_df["m/z"], [580.382344, 501.752743]))
+        self.assertEqual(exp.processed_pairs.shape[0], 0)
+
 
 class EquivalenceTest(TestBase):
     def setUp(self):

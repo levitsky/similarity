@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 from koinapy import Koina
 from .utils import Fixture, SpectrumIndex, RTIndex, IMIndex
-from pyteomics import cmass
+from pyteomics import cmass, auxiliary as aux, proforma
 import threading
 import logging
 
@@ -117,7 +117,7 @@ class MzIrtDataFrame(Fixture):
         logger.info(
             "After dropping duplicates, %d unique peptide sequences remain", len(df)
         )
-        if not experiment.config.nonstandard_aminoacids:
+        if not experiment.config.nonstandard_aminoacids and not experiment.config.ptms:
             unsupported = df["peptide_sequences"].str.contains(
                 "[^ACDEFGHIKLMNPQRSTVWY]", regex=True
             )
@@ -138,10 +138,23 @@ class MzIrtDataFrame(Fixture):
             index = IMIndex(experiment=experiment)
             self.get_predictions("ccs", index, df, experiment)
 
-        df["m/z"] = df["peptide_sequences"].apply(
-            lambda seq: cmass.fast_mass(seq, charge=experiment.config.charge)
-        )
+        if experiment.config.ptms:
+
+            def mz(seq):
+                try:
+                    return cmass.fast_mass(seq, charge=experiment.config.charge)
+                except aux.PyteomicsError as e:
+                    return proforma.ProForma.parse(seq).mz(
+                        charge=experiment.config.charge
+                    )
+
+        else:
+            mz = lambda seq: cmass.fast_mass(seq, charge=experiment.config.charge)
+
+        df["m/z"] = df["peptide_sequences"].apply(mz)
         df["collision_energies"] = experiment.config.collision_energy
+        if experiment.config.fragmentation_type is not None:
+            df["fragmentation_types"] = experiment.config.fragmentation_type
         for item in self.save_queue:
             self.save_predictions(*item)
         del self.save_queue
