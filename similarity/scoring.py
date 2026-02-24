@@ -32,13 +32,13 @@ class ScoringWorker(ExperimentWorker):
         idx1: np.ndarray,
         idx2: np.ndarray,
     ) -> float:
-        logger.debug(
-            "Calculating similarity score with intensities1: %s, intensities2: %s, idx1: %s, idx2: %s",
-            intensities1,
-            intensities2,
-            idx1,
-            idx2,
-        )
+        # logger.debug(
+        #     "Calculating similarity score with intensities1: %s, intensities2: %s, idx1: %s, idx2: %s",
+        #     intensities1,
+        #     intensities2,
+        #     idx1,
+        #     idx2,
+        # )
         wx = np.sqrt(intensities1[idx1])
         wy = np.sqrt(intensities2[idx2])
         # the numerator only has matching peaks intensities,
@@ -49,14 +49,14 @@ class ScoringWorker(ExperimentWorker):
 
         ndotproduct = num / denom1 / denom2
         score = 1 - 2 * np.arccos(ndotproduct) / np.pi
-        logger.debug(
-            "Calculated similarity score: %f (num: %f, denom1: %f, denom2: %f, ndotproduct: %f)",
-            score,
-            num,
-            denom1,
-            denom2,
-            ndotproduct,
-        )
+        # logger.debug(
+        #     "Calculated similarity score: %f (num: %f, denom1: %f, denom2: %f, ndotproduct: %f)",
+        #     score,
+        #     num,
+        #     denom1,
+        #     denom2,
+        #     ndotproduct,
+        # )
         return score
 
     def score_pair(self, i: int, j: int) -> float:
@@ -73,16 +73,16 @@ class ScoringWorker(ExperimentWorker):
             rtol=self.experiment.config.peak_ppm / 1e6,
         )
 
-        logger.debug(
-            "For pair (%d, %d), the matching peaks: %s and %s with intensities %s and %s",
-            i,
-            j,
-            mz1[idx1],
-            mz2[idx2],
-            intensities1[idx1],
-            intensities2[idx2],
-        )
-        logger.debug("Full m/z arrays:\n%s:\n %s and\n%s:\n%s", pep1, mz1, pep2, mz2)
+        # logger.debug(
+        #     "For pair (%d, %d), the matching peaks: %s and %s with intensities %s and %s",
+        #     i,
+        #     j,
+        #     mz1[idx1],
+        #     mz2[idx2],
+        #     intensities1[idx1],
+        #     intensities2[idx2],
+        # )
+        # logger.debug("Full m/z arrays:\n%s:\n %s and\n%s:\n%s", pep1, mz1, pep2, mz2)
         return ScoringWorker.similarity_score(intensities1, intensities2, idx1, idx2)
 
     def run(self):
@@ -118,6 +118,9 @@ class ProcessedPairs(Fixture):
 
     def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
         index_array = experiment.pairs
+        # ensure spectrum predictions are calculated
+        _ = experiment.predicted_spectra
+        logger.debug("Ensured that predicted spectra exist before scoring: %s", _)
         results = []
         if experiment.config.workers > 1:
             logger.info(

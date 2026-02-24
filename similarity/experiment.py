@@ -1,9 +1,13 @@
 import logging
-
+import diskcache
 from .utils import Config
 from .prediction import PredictedSpectrumCollection, MzIrtDataFrame
 from .grouping import SpectrumGrouping
 from .scoring import ProcessedPairs
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from diskcache import Cache
 
 logger = logging.getLogger(__name__)
 
@@ -13,9 +17,16 @@ class Experiment:
     pairs = SpectrumGrouping()
     predicted_spectra = PredictedSpectrumCollection()
     processed_pairs = ProcessedPairs()
+    _cache: "Cache | None" = None
 
     def __init__(self, config: Config):
         self.config = config
+        self._cache = diskcache.Cache(
+            str(config.cache_dir),
+            size_limit=0,
+            cull_limit=0,
+            eviction_policy="none",
+        )
 
     def run(self):
 

@@ -146,7 +146,7 @@ class SpectrumGrouping(Fixture):
                     pairs.append((i, valid_indices))
                     inpairs[i] = True
                     for j in valid_indices:
-                        inpairs[j - offset] = True
+                        inpairs[j] = True
         else:
             count = 0
             chunk = []
@@ -169,7 +169,7 @@ class SpectrumGrouping(Fixture):
                 for i, indices in batch_pairs:
                     inpairs[i] = True
                     for j in indices:
-                        inpairs[j - offset] = True
+                        inpairs[j] = True
 
         experiment.mz_irt_df["in pairs"] |= inpairs
         return pairs

@@ -7,24 +7,41 @@ import diskcache
 from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING
 from types import UnionType
+import logging
 
 if TYPE_CHECKING:
     from .experiment import Experiment
+
+logger = logging.getLogger(__name__)
 
 
 class Fixture(ABC):
     """A descriptor for a calculation result. The result is calculated lazily on first access and then cached for subsequent accesses."""
 
-    _data: Any = None
+    _data: dict["Experiment", Any] = {}
 
     @abstractmethod
     def evaluate(self, experiment: "Experiment") -> Any:
         pass
 
+    def __init__(self):
+        super().__init__()
+        self._data = {}
+
     def __get__(self, obj, objtype=None):
-        if self._data is None:
-            self._data = self.evaluate(obj)
-        return self._data
+        logger.debug(
+            "Accessing %s fixture %s on obj %s. Keys cached are currently:\n%s",
+            self.__class__.__name__,
+            self,
+            obj,
+            self._data.keys(),
+        )
+        if obj not in self._data:
+            logger.debug("%s not in cache on %s, evaluating...", obj, self)
+            self._data[obj] = self.evaluate(obj)
+        else:
+            logger.debug("%s already in cache: (type %s)", self, type(self._data[obj]))
+        return self._data[obj]
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,9 +99,17 @@ class Index(diskcache.Index, ABC):
     def _full_key(self, key: str) -> tuple:
         pass
 
+    def __new__(cls, experiment: "Experiment", *args, **kwargs):
+        assert (
+            experiment._cache is not None
+        ), "Experiment cache must be initialized before creating Index"
+        instance = super().__new__(cls)
+        instance._cache = experiment._cache
+        return instance
+
     def __init__(self, experiment: "Experiment"):
         self.experiment = experiment
-        super().__init__(str(experiment.config.cache_dir))
+        # not calling super().__init__() because it would reassign self._cache
 
     def __getitem__(self, key: str) -> Any:
         full_key = self._full_key(key)
@@ -100,21 +125,24 @@ class Index(diskcache.Index, ABC):
 
 
 class SpectrumIndex(Index):
-    def _full_key(self, key: str) -> tuple:
+    def _full_key(self, key: str) -> bytes:
         config = self.experiment.config
-        return (key, config.collision_energy, config.charge, config.model_intensity)
+        return bytes(
+            f"{key}_{config.collision_energy}_{config.charge}_{config.model_intensity}",
+            "ascii",
+        )
 
 
 class RTIndex(Index):
-    def _full_key(self, key: str) -> tuple:
+    def _full_key(self, key: str) -> bytes:
         config = self.experiment.config
-        return (key, config.model_irt)
+        return bytes(f"{key}_{config.model_irt}", "ascii")
 
 
 class IMIndex(Index):
-    def _full_key(self, key: str) -> tuple:
+    def _full_key(self, key: str) -> bytes:
         config = self.experiment.config
-        return (key, config.charge, config.model_ccs)
+        return bytes(f"{key}_{config.charge}_{config.model_ccs}", "ascii")
 
 
 class ExperimentWorker(ABC, mp.Process):

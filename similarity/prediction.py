@@ -75,29 +75,39 @@ class MzIrtDataFrame(Fixture):
     def get_predictions(
         self, name: str, index: "Index", inputs: pd.DataFrame, experiment: "Experiment"
     ) -> None:
-        cached = inputs["peptide_sequences"].apply(lambda seq: seq in index)
+        inputs[name] = inputs["peptide_sequences"].apply(index.get).astype(float)
+        ncached = inputs[name].notna().sum()
         logger.info(
             "%d of %d peptides are cached for %s prediction",
-            cached.sum(),
+            ncached,
             inputs.shape[0],
             name,
         )
-        if not cached.all():
-            logger.info("Predicting %s for %d peptides...", name, (~cached).sum())
+        if ncached < inputs.shape[0]:
+            logger.info(
+                "Predicting %s for %d peptides...", name, inputs.shape[0] - ncached
+            )
             model = Koina(
                 getattr(experiment.config, f"model_{name}"),
                 experiment.config.koina_host,
             )
-            df = model.predict(inputs.loc[~cached], df_output=True)
-            logger.info("Predicted %s for %d peptides.", name, df.shape[0])
+            df = model.predict(inputs.loc[inputs[name].isna()], df_output=True)
+            logger.debug(
+                "Predicted %s values (%d rows in total):\n%s",
+                name,
+                df.shape[0],
+                df.head(),
+            )
             self.save_queue.append((df, name, index))
-            inputs[name] = df[name]
+            inputs.update(df[[name]])
+            if inputs[name].isna().any():
+                logger.warning(
+                    "Some %s values are still missing after prediction, these will be skipped: %s",
+                    name,
+                    inputs.loc[inputs[name].isna(), "peptide_sequences"].tolist(),
+                )
         else:
             logger.info("All %s values are cached, skipping prediction", name)
-        if cached.any():
-            inputs.loc[cached, name] = inputs.loc[cached, "peptide_sequences"].apply(
-                lambda seq: index[seq]
-            )
 
     def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
         input_file = experiment.config.input_file
