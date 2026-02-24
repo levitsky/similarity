@@ -118,6 +118,9 @@ class ProcessedPairs(Fixture):
 
     def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
         index_array = experiment.pairs
+        # ensure spectrum predictions are calculated
+        _ = experiment.predicted_spectra
+        logger.debug("Ensured that predicted spectra exist before scoring: %s", _)
         results = []
         if experiment.config.workers > 1:
             logger.info(
