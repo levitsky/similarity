@@ -77,7 +77,8 @@ class Config(BaseConfig):
     input_file: Path
     collision_energy: int = 30
     fragmentation_type: str | None = None
-    charge: int = 2
+    min_charge: int = 2
+    max_charge: int = 2
     model_intensity: str = "Prosit_2020_intensity_HCD"
     model_irt: str = "Prosit_2019_irt"
     model_ccs: str | None = None
@@ -113,24 +114,24 @@ class Index(diskcache.Index, ABC):
         self.experiment = experiment
         # not calling super().__init__() because it would reassign self._cache
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self, key: Any) -> Any:
         full_key = self._full_key(key)
         return super().__getitem__(full_key)
 
-    def __setitem__(self, key: str, value: Any) -> None:
+    def __setitem__(self, key: Any, value: Any) -> None:
         full_key = self._full_key(key)
         super().__setitem__(full_key, value)
 
-    def __contains__(self, key: str) -> bool:
+    def __contains__(self, key: Any) -> bool:
         full_key = self._full_key(key)
         return full_key in self.cache  # direct check on Index doesn't work
 
 
 class SpectrumIndex(Index):
-    def _full_key(self, key: str) -> bytes:
+    def _full_key(self, key: tuple[str, int]) -> bytes:
         config = self.experiment.config
         return bytes(
-            f"{key}_{config.collision_energy}_{config.charge}_{config.model_intensity}",
+            f"{key[0]}_{config.collision_energy}_{key[1]}_{config.model_intensity}",
             "ascii",
         )
 
