@@ -58,13 +58,13 @@ class TestBase(unittest.TestCase):
 
 class ExperimentTest(TestBase):
     def test_run(self):
-        """Test that Experiment.run() executes and returns something."""
-        for workers in [1, 4]:
+        """Test that Experiment executes and returns something."""
+        for workers in [5, 1]:
             with self.subTest(workers=workers):
+                self.logger.info("Testing Experiment with %d workers", workers)
                 config = dataclasses.replace(self.config, workers=workers)
                 exp = Experiment(config)
-                result = exp.run().sort_values(["index1", "index2"])
-                # Check that run() returns the processed_pairs object
+                result = exp.processed_pairs.sort_values(["index1", "index2"])
                 self.logger.debug("Final result:\n%s", result)
                 self.assertEqual(
                     result.shape[0], 9
