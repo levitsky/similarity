@@ -87,6 +87,13 @@ class ExperimentTest(TestBase):
                     )
                 )
 
+    def test_multiple_charges(self):
+        config = dataclasses.replace(self.config, max_charge=3)
+        exp = Experiment(config)
+        self.assertEqual(exp.mz_irt_df["precursor_charges"].max(), 3)
+        self.assertEqual(exp.mz_irt_df.shape[0], 56)
+        self.assertEqual(exp.processed_pairs.shape[0], 18)
+
     def test_ptms(self):
         """Test that Experiment can handle peptides with PTMs."""
         config = Config(
@@ -116,8 +123,10 @@ class EquivalenceTest(TestBase):
                 with self.subTest(pair=(i, j)):
                     pep1 = exp.mz_irt_df.loc[i, "peptide_sequences"]
                     pep2 = exp.mz_irt_df.loc[j, "peptide_sequences"]
-                    mz1, intensities1 = exp.predicted_spectra[pep1]
-                    mz2, intensities2 = exp.predicted_spectra[pep2]
+                    charge1 = exp.mz_irt_df.loc[i, "precursor_charges"]
+                    charge2 = exp.mz_irt_df.loc[j, "precursor_charges"]
+                    mz1, intensities1 = exp.predicted_spectra[(pep1, charge1)]
+                    mz2, intensities2 = exp.predicted_spectra[(pep2, charge2)]
                     self.logger.debug(
                         "Testing peak matching for peptides %d, %d: %s and %s",
                         i,
@@ -210,19 +219,27 @@ class EquivalenceTest(TestBase):
                 with self.subTest(pair=(i, j)):
                     pep1 = exp.mz_irt_df.loc[i, "peptide_sequences"]
                     pep2 = exp.mz_irt_df.loc[j, "peptide_sequences"]
+                    charge1 = exp.mz_irt_df.loc[i, "precursor_charges"]
+                    charge2 = exp.mz_irt_df.loc[j, "precursor_charges"]
                     matcher = joinPeaks(
                         tolerance=self.config.peak_tolerance, ppm=self.config.peak_ppm
                     )
                     x_df = (
                         pd.DataFrame(
-                            {"mz": spectra[pep1][0], "intensities": spectra[pep1][1]}
+                            {
+                                "mz": spectra[(pep1, charge1)][0],
+                                "intensities": spectra[(pep1, charge1)][1],
+                            }
                         )
                         .sort_values(by="mz")
                         .reset_index(drop=True)
                     )
                     y_df = (
                         pd.DataFrame(
-                            {"mz": spectra[pep2][0], "intensities": spectra[pep2][1]}
+                            {
+                                "mz": spectra[(pep2, charge2)][0],
+                                "intensities": spectra[(pep2, charge2)][1],
+                            }
                         )
                         .sort_values(by="mz")
                         .reset_index(drop=True)

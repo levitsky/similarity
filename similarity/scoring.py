@@ -63,9 +63,11 @@ class ScoringWorker(ExperimentWorker):
         mz_irt_df = self.experiment.mz_irt_df
         spectra = self.experiment.predicted_spectra
         pep1 = mz_irt_df.loc[i, "peptide_sequences"]
+        charge1 = mz_irt_df.loc[i, "precursor_charges"]
         pep2 = mz_irt_df.loc[j, "peptide_sequences"]
-        mz1, intensities1 = spectra[pep1]
-        mz2, intensities2 = spectra[pep2]
+        charge2 = mz_irt_df.loc[j, "precursor_charges"]
+        mz1, intensities1 = spectra[(pep1, charge1)]
+        mz2, intensities2 = spectra[(pep2, charge2)]
         idx1, idx2 = ScoringWorker.match_peaks(
             mz1,
             mz2,
