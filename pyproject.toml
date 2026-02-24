@@ -23,6 +23,8 @@ classifiers = [
 dependencies = [
     "koinapy",
     "pyteomics.cythonize",
+    "pyteomics @ git+https://github.com/levitsky/pyteomics.git",
+    "lxml",
     "scipy",
     "diskcache",
     # spectram_similarity is not installable via pip yet

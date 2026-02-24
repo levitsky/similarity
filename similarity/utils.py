@@ -76,6 +76,7 @@ class BaseConfig:
 class Config(BaseConfig):
     input_file: Path
     collision_energy: int = 30
+    fragmentation_type: str | None = None
     charge: int = 2
     model_intensity: str = "Prosit_2020_intensity_HCD"
     model_irt: str = "Prosit_2019_irt"
@@ -86,6 +87,7 @@ class Config(BaseConfig):
     peak_ppm: float = 10.0
     ccs_rtolerance: float = 0.02
     nonstandard_aminoacids: bool = False
+    ptms: bool = False
     koina_host: str = "koina.wilhelmlab.org:443"
     cache_dir: Path = Path(".")
     workers: int = mp.cpu_count()
