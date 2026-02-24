@@ -7,24 +7,41 @@ import diskcache
 from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING
 from types import UnionType
+import logging
 
 if TYPE_CHECKING:
     from .experiment import Experiment
+
+logger = logging.getLogger(__name__)
 
 
 class Fixture(ABC):
     """A descriptor for a calculation result. The result is calculated lazily on first access and then cached for subsequent accesses."""
 
-    _data: Any = None
+    _data: dict["Experiment", Any] = {}
 
     @abstractmethod
     def evaluate(self, experiment: "Experiment") -> Any:
         pass
 
+    def __init__(self):
+        super().__init__()
+        self._data = {}
+
     def __get__(self, obj, objtype=None):
-        if self._data is None:
-            self._data = self.evaluate(obj)
-        return self._data
+        logger.debug(
+            "Accessing %s fixture %s on obj %s. Keys cached are currently:\n%s",
+            self.__class__.__name__,
+            self,
+            obj,
+            self._data.keys(),
+        )
+        if obj not in self._data:
+            logger.debug("%s not in cache on %s, evaluating...", obj, self)
+            self._data[obj] = self.evaluate(obj)
+        else:
+            logger.debug("%s already in cache: (type %s)", self, type(self._data[obj]))
+        return self._data[obj]
 
 
 @dataclass(frozen=True, slots=True)
