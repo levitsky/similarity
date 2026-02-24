@@ -139,7 +139,7 @@ class MzIrtDataFrame(Fixture):
                 )
             df = df.loc[~unsupported].reset_index(drop=True)
 
-        save_queue = []
+        self.save_queue = []
         index = RTIndex(experiment=experiment)
         self.get_predictions("irt", index, df, experiment)
 
@@ -183,6 +183,7 @@ class MzIrtDataFrame(Fixture):
         df["collision_energies"] = experiment.config.collision_energy
         if experiment.config.fragmentation_type is not None:
             df["fragmentation_types"] = experiment.config.fragmentation_type
-        for item in save_queue:
+        for item in self.save_queue:
             self.save_predictions(*item)
+        del self.save_queue
         return df
