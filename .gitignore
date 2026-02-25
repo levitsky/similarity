@@ -6,3 +6,6 @@ cache.db*
 **.tsv
 *.bin
 *.html
+*.npy
+*.log
+*.txt

@@ -39,9 +39,18 @@ class Fixture(ABC):
         if obj not in self._data:
             logger.debug("%s not in cache on %s, evaluating...", obj, self)
             self._data[obj] = self.evaluate(obj)
+            logger.info(
+                "Finished evaluating %s for %s %d",
+                self.__class__.__name__,
+                obj.__class__.__name__,
+                id(obj),
+            )
         else:
             logger.debug("%s already in cache: (type %s)", self, type(self._data[obj]))
         return self._data[obj]
+
+    def __set__(self, obj, value):
+        raise AttributeError(f"Cannot set value of fixture {self.__class__.__name__}")
 
 
 @dataclass(frozen=True, slots=True)

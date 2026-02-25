@@ -3,20 +3,24 @@ import diskcache
 from .utils import Config
 from .prediction import PredictedSpectrumCollection, MzIrtDataFrame
 from .grouping import SpectrumGrouping
-from .scoring import ProcessedPairs
+from .scoring import Scores, ScoresDataFrame
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from diskcache import Cache
+    import pandas as pd
+    import numpy as np
+    from .utils import SpectrumIndex
 
 logger = logging.getLogger(__name__)
 
 
 class Experiment:
-    mz_irt_df = MzIrtDataFrame()
-    pairs = SpectrumGrouping()
-    predicted_spectra = PredictedSpectrumCollection()
-    processed_pairs = ProcessedPairs()
+    peptides: "pd.DataFrame" = MzIrtDataFrame()
+    pairs: list = SpectrumGrouping()
+    predicted_spectra: "SpectrumIndex" = PredictedSpectrumCollection()
+    score_array: "np.ndarray" = Scores()
+    score_df: "pd.DataFrame" = ScoresDataFrame()
     _cache: "Cache | None" = None
 
     def __init__(self, config: Config):
@@ -27,17 +31,3 @@ class Experiment:
             cull_limit=0,
             eviction_policy="none",
         )
-
-    def run(self):
-
-        logger.info("Start calculating mz and predicting RT...")
-        logger.debug("MzIrtDataFrame columns: %s", self.mz_irt_df.columns)
-        logger.debug("MzIrtDataFrame shape: %s", self.mz_irt_df.shape)
-        logger.info("Start making groups...")
-        logger.debug("Found %d pairs", len(self.pairs))
-        logger.info("Start predicting spectra...")
-        logger.debug("Predicted spectra: %s", self.predicted_spectra)
-        logger.info("Spectrum prediction complete.")
-        logger.info("Start processing pairs...")
-        logger.info("Processed %d pairs.", self.processed_pairs.shape[0])
-        return self.processed_pairs

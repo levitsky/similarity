@@ -64,14 +64,14 @@ class ExperimentTest(TestBase):
                 self.logger.info("Testing Experiment with %d workers", workers)
                 config = dataclasses.replace(self.config, workers=workers)
                 exp = Experiment(config)
-                result = exp.processed_pairs.sort_values(["index1", "index2"])
+                result = exp.score_df.sort_values(["i", "j"])
                 self.logger.debug("Final result:\n%s", result)
                 self.assertEqual(
                     result.shape[0], 9
                 )  # Assuming 9 pairs based on the test input
                 self.assertTrue(
                     np.allclose(
-                        result["similarity score"],
+                        result["score"],
                         [
                             0.847243,
                             0.816326,
@@ -90,9 +90,9 @@ class ExperimentTest(TestBase):
     def test_multiple_charges(self):
         config = dataclasses.replace(self.config, max_charge=3)
         exp = Experiment(config)
-        self.assertEqual(exp.mz_irt_df["precursor_charges"].max(), 3)
-        self.assertEqual(exp.mz_irt_df.shape[0], 56)
-        self.assertEqual(exp.processed_pairs.shape[0], 18)
+        self.assertEqual(exp.peptides["precursor_charges"].max(), 3)
+        self.assertEqual(exp.peptides.shape[0], 56)
+        self.assertEqual(exp.score_df.shape[0], 18)
 
     def test_ptms(self):
         """Test that Experiment can handle peptides with PTMs."""
@@ -104,9 +104,9 @@ class ExperimentTest(TestBase):
             fragmentation_type="HCD",
         )
         exp = Experiment(config)
-        self.assertTrue(np.allclose(exp.mz_irt_df["irt"], [115.689156, 2.694990]))
-        self.assertTrue(np.allclose(exp.mz_irt_df["m/z"], [580.382344, 501.752743]))
-        self.assertEqual(exp.processed_pairs.shape[0], 0)
+        self.assertTrue(np.allclose(exp.peptides["irt"], [115.689156, 2.694990]))
+        self.assertTrue(np.allclose(exp.peptides["m/z"], [580.382344, 501.752743]))
+        self.assertEqual(exp.score_df.shape[0], 0)
 
 
 class EquivalenceTest(TestBase):
@@ -121,10 +121,10 @@ class EquivalenceTest(TestBase):
         for i, indices in exp.pairs:
             for j in indices:
                 with self.subTest(pair=(i, j)):
-                    pep1 = exp.mz_irt_df.loc[i, "peptide_sequences"]
-                    pep2 = exp.mz_irt_df.loc[j, "peptide_sequences"]
-                    charge1 = exp.mz_irt_df.loc[i, "precursor_charges"]
-                    charge2 = exp.mz_irt_df.loc[j, "precursor_charges"]
+                    pep1 = exp.peptides.loc[i, "peptide_sequences"]
+                    pep2 = exp.peptides.loc[j, "peptide_sequences"]
+                    charge1 = exp.peptides.loc[i, "precursor_charges"]
+                    charge2 = exp.peptides.loc[j, "precursor_charges"]
                     mz1, intensities1 = exp.predicted_spectra[(pep1, charge1)]
                     mz2, intensities2 = exp.predicted_spectra[(pep2, charge2)]
                     self.logger.debug(
@@ -217,10 +217,10 @@ class EquivalenceTest(TestBase):
         for i, indices in pairs:
             for j in indices:
                 with self.subTest(pair=(i, j)):
-                    pep1 = exp.mz_irt_df.loc[i, "peptide_sequences"]
-                    pep2 = exp.mz_irt_df.loc[j, "peptide_sequences"]
-                    charge1 = exp.mz_irt_df.loc[i, "precursor_charges"]
-                    charge2 = exp.mz_irt_df.loc[j, "precursor_charges"]
+                    pep1 = exp.peptides.loc[i, "peptide_sequences"]
+                    pep2 = exp.peptides.loc[j, "peptide_sequences"]
+                    charge1 = exp.peptides.loc[i, "precursor_charges"]
+                    charge2 = exp.peptides.loc[j, "precursor_charges"]
                     matcher = joinPeaks(
                         tolerance=self.config.peak_tolerance, ppm=self.config.peak_ppm
                     )
