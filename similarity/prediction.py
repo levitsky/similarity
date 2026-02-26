@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 import pandas as pd
 import numpy as np
 from koinapy import Koina
@@ -72,9 +72,10 @@ class PredictedSpectrumCollection(Fixture):
 class MzIrtDataFrame(Fixture):
     @staticmethod
     def _write_to_cache(df: pd.DataFrame, name: str, index: "Index") -> None:
+        key = MzIrtDataFrame.index_key(name)
         with index.transact():
             for _, row in df.iterrows():
-                index[row["peptide_sequences"]] = row[name]
+                index[key(row)] = row[name]
         logger.info("Saved %d %s predictions to cache", df.shape[0], name)
 
     @staticmethod
@@ -85,6 +86,16 @@ class MzIrtDataFrame(Fixture):
             )
             t.start()
 
+    @staticmethod
+    def index_key(name: str) -> Callable:
+        if name == "irt":
+            return lambda row: row["peptide_sequences"]
+
+        if name == "ccs":
+            return lambda row: (row["peptide_sequences"], row["precursor_charges"])
+
+        raise ValueError(f"Unknown prediction type: {name}")
+
     def get_predictions(
         self,
         name: str,
@@ -92,6 +103,7 @@ class MzIrtDataFrame(Fixture):
         inputs: pd.DataFrame,
         experiment: "Experiment",
     ) -> None:
+
         if index is None:
             inputs[name] = np.nan
             ncached = 0
@@ -99,7 +111,8 @@ class MzIrtDataFrame(Fixture):
                 "Skipping index lookup for %s prediction, no cache configured", name
             )
         else:
-            inputs[name] = inputs["peptide_sequences"].apply(index.get).astype(float)
+            key = self.index_key(name)
+            inputs[name] = inputs.apply(lambda row: index.get(key(row), np.nan), axis=1)
             ncached = inputs[name].notna().sum()
             logger.info(
                 "%d of %d peptides are cached for %s prediction",
@@ -107,6 +120,7 @@ class MzIrtDataFrame(Fixture):
                 inputs.shape[0],
                 name,
             )
+
         if ncached < inputs.shape[0]:
             logger.info(
                 "Predicting %s for %d peptides...", name, inputs.shape[0] - ncached
