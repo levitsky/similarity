@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING
 import pandas as pd
+import numpy as np
 from koinapy import Koina
 from .utils import Fixture, SpectrumIndex, RTIndex, IMIndex
 from pyteomics import cmass, auxiliary as aux, proforma
@@ -77,23 +78,35 @@ class MzIrtDataFrame(Fixture):
         logger.info("Saved %d %s predictions to cache", df.shape[0], name)
 
     @staticmethod
-    def save_predictions(df: pd.DataFrame, name: str, index: "Index") -> None:
-        t = threading.Thread(
-            target=MzIrtDataFrame._write_to_cache, args=(df, name, index)
-        )
-        t.start()
+    def save_predictions(df: pd.DataFrame, name: str, index: "Index | None") -> None:
+        if index is not None:
+            t = threading.Thread(
+                target=MzIrtDataFrame._write_to_cache, args=(df, name, index)
+            )
+            t.start()
 
     def get_predictions(
-        self, name: str, index: "Index", inputs: pd.DataFrame, experiment: "Experiment"
+        self,
+        name: str,
+        index: "Index | None",
+        inputs: pd.DataFrame,
+        experiment: "Experiment",
     ) -> None:
-        inputs[name] = inputs["peptide_sequences"].apply(index.get).astype(float)
-        ncached = inputs[name].notna().sum()
-        logger.info(
-            "%d of %d peptides are cached for %s prediction",
-            ncached,
-            inputs.shape[0],
-            name,
-        )
+        if index is None:
+            inputs[name] = np.nan
+            ncached = 0
+            logger.info(
+                "Skipping index lookup for %s prediction, no cache configured", name
+            )
+        else:
+            inputs[name] = inputs["peptide_sequences"].apply(index.get).astype(float)
+            ncached = inputs[name].notna().sum()
+            logger.info(
+                "%d of %d peptides are cached for %s prediction",
+                ncached,
+                inputs.shape[0],
+                name,
+            )
         if ncached < inputs.shape[0]:
             logger.info(
                 "Predicting %s for %d peptides...", name, inputs.shape[0] - ncached
@@ -141,7 +154,10 @@ class MzIrtDataFrame(Fixture):
             df = df.loc[~unsupported].reset_index(drop=True)
 
         self.save_queue = []
-        index = RTIndex(experiment=experiment)
+        if experiment.config.cache_properties:
+            index = RTIndex(experiment=experiment)
+        else:
+            index = None
         self.get_predictions("irt", index, df, experiment)
 
         df["precursor_charges"] = experiment.config.min_charge
@@ -162,7 +178,10 @@ class MzIrtDataFrame(Fixture):
             )
 
         if experiment.config.model_ccs is not None:
-            index = IMIndex(experiment=experiment)
+            if experiment.config.cache_properties:
+                index = IMIndex(experiment=experiment)
+            else:
+                index = None
             self.get_predictions("ccs", index, df, experiment)
 
         if experiment.config.ptms:

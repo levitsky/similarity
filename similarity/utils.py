@@ -100,6 +100,7 @@ class Config(BaseConfig):
     ptms: bool = False
     koina_host: str = "koina.wilhelmlab.org:443"
     cache_dir: Path = Path(".")
+    cache_properties: bool = False
     workers: int = mp.cpu_count()
     batch_size: int = 100000
 
