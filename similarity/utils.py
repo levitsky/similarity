@@ -153,9 +153,9 @@ class RTIndex(Index):
 
 
 class IMIndex(Index):
-    def _full_key(self, key: str) -> bytes:
+    def _full_key(self, key: tuple[str, int]) -> bytes:
         config = self.experiment.config
-        return bytes(f"{key}_{config.charge}_{config.model_ccs}", "ascii")
+        return bytes(f"{key[0]}_{key[1]}_{config.model_ccs}", "ascii")
 
 
 class ExperimentWorker(ABC, mp.Process):
