@@ -96,6 +96,11 @@ class MzIrtDataFrame(Fixture):
 
         raise ValueError(f"Unknown prediction type: {name}")
 
+    @staticmethod
+    def load_from_cache(name: str, index: "Index", inputs: pd.DataFrame) -> None:
+        key = MzIrtDataFrame.index_key(name)
+        inputs[name] = inputs.apply(lambda row: index.get(key(row), np.nan), axis=1)
+
     def get_predictions(
         self,
         name: str,
@@ -111,8 +116,7 @@ class MzIrtDataFrame(Fixture):
                 "Skipping index lookup for %s prediction, no cache configured", name
             )
         else:
-            key = self.index_key(name)
-            inputs[name] = inputs.apply(lambda row: index.get(key(row), np.nan), axis=1)
+            self.load_from_cache(name, index, inputs)
             ncached = inputs[name].notna().sum()
             logger.info(
                 "%d of %d peptides are cached for %s prediction",
