@@ -95,7 +95,9 @@ class ScoringWorker(ExperimentWorker):
             i, indices = task
             for j in indices:
                 score = self.score_pair(i, j)
-                self.result_queue.put((i, j, score))
+                if score > self.experiment.config.score_threshold:
+                    self.result_queue.put((i, j, score))
+        self.result_queue.put(None)
 
 
 class Scores(Fixture):
@@ -120,23 +122,29 @@ class Scores(Fixture):
             ]
             for worker in workers:
                 worker.start()
-            count = 0
             for i, indices in index_array:
                 in_queue.put((i, indices))
-                count += len(indices)
             for _ in workers:
                 in_queue.put(None)
 
-            scores = np.empty(
-                count, dtype=np.dtype([("i", int), ("j", int), ("score", float)])
-            )
-            for idx in range(count):
-                i, j, score = out_queue.get()
-                scores[idx] = (i, j, score)
-                if idx != 0 and idx % experiment.config.batch_size == 0:
-                    logger.info("Processed %d / %d pairs...", idx, count)
+            workers_done = 0
+            idx = 0
+            while workers_done < len(workers):
+                item = out_queue.get()
+                if item is None:
+                    workers_done += 1
+                else:
+                    i, j, score = item
+                    results.append((i, j, score))
+                    idx += 1
+                    if idx % experiment.config.batch_size == 0:
+                        logger.info("Processed %d pairs...", idx)
             for worker in workers:
                 worker.join()
+            scores = np.array(
+                results, dtype=np.dtype([("i", int), ("j", int), ("score", float)])
+            )
+
         else:
             logger.info(
                 "Scoring %d pairs with a single worker...",
@@ -151,9 +159,10 @@ class Scores(Fixture):
                 for j in indices:
                     idx += 1
                     score = ScoringWorker.score_pair(w, i, j)
-                    ilist.append(i)
-                    jlist.append(j)
-                    scorelist.append(score)
+                    if score > experiment.config.score_threshold:
+                        ilist.append(i)
+                        jlist.append(j)
+                        scorelist.append(score)
                     if idx % experiment.config.batch_size == 0:
                         logger.info("Processed %d pairs...", idx)
             scores = np.array(list(zip(ilist, jlist, scorelist)), dtype=dtype)
