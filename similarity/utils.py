@@ -103,6 +103,7 @@ class Config(BaseConfig):
     cache_properties: bool = False
     workers: int = mp.cpu_count()
     batch_size: int = 100000
+    score_threshold: float = 0.0
 
 
 class Index(diskcache.Index, ABC):
