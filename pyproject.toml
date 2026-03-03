@@ -22,6 +22,7 @@ classifiers = [
 
 dependencies = [
     "koinapy",
+    "tritonclient[grpc]",  # for koinapy
     "pyteomics.cythonize",
     "pyteomics @ git+https://github.com/levitsky/pyteomics.git",
     "lxml",
