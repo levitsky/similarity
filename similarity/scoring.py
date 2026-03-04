@@ -176,6 +176,8 @@ class ScoresDataFrame(Fixture):
         df = pd.DataFrame.from_records(experiment.score_array)
         df["peptide 1"] = df["i"].apply(lambda i: peptides.loc[i, "peptide_sequences"])
         df["peptide 2"] = df["j"].apply(lambda j: peptides.loc[j, "peptide_sequences"])
+        df["charge 1"] = df["i"].apply(lambda i: peptides.loc[i, "precursor_charges"])
+        df["charge 2"] = df["j"].apply(lambda j: peptides.loc[j, "precursor_charges"])
         df["m/z 1"] = df["i"].apply(lambda i: peptides.loc[i, "m/z"])
         df["m/z 2"] = df["j"].apply(lambda j: peptides.loc[j, "m/z"])
         df["iRT 1"] = df["i"].apply(lambda i: peptides.loc[i, "irt"])
