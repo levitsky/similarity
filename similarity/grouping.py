@@ -125,7 +125,6 @@ class SpectrumGrouping(Fixture):
         )
         subtree = self.kdtree(experiment, batch)
 
-        inpairs = np.zeros(len(experiment.peptides), dtype=bool)
         offset = batch * experiment.config.batch_size
         logger.debug("Batch idx %d, offset %d", batch, offset)
 
@@ -144,9 +143,6 @@ class SpectrumGrouping(Fixture):
                 i, valid_indices = pseudoworker.process_task((i, candidates), mzrt)
                 if valid_indices:
                     pairs.append((i, valid_indices))
-                    inpairs[i] = True
-                    for j in valid_indices:
-                        inpairs[j] = True
         else:
             count = 0
             chunk = []
@@ -166,17 +162,10 @@ class SpectrumGrouping(Fixture):
             for _ in range(count):
                 batch_pairs = out_queue.get()
                 pairs.extend(batch_pairs)
-                for i, indices in batch_pairs:
-                    inpairs[i] = True
-                    for j in indices:
-                        inpairs[j] = True
 
-        experiment.peptides["in pairs"] |= inpairs
         return pairs
 
     def evaluate(self, experiment: "Experiment") -> list[tuple[int, list[int]]]:
-        df = experiment.peptides
-        df["in pairs"] = False  # Add a column to track if a spectrum is in any pair
         tree = self.kdtree(experiment)
         logger.info("Built cKDTree with %d nodes from %d points", tree.size, tree.n)
         mzrt = self.get_array(experiment)

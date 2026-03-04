@@ -43,16 +43,10 @@ class PredictedSpectrumCollection(Fixture):
     def evaluate(self, experiment: "Experiment") -> SpectrumIndex:
         df = experiment.peptides
         index = SpectrumIndex(experiment=experiment)
-        # make sure pairs are calculated
-        experiment.pairs
         cached = df.apply(
             lambda row: (row["peptide_sequences"], row["precursor_charges"]) in index,
             axis=1,
         )
-        logger.info(
-            "Dropping %d peptides not in any pairs", (df["in pairs"] == False).sum()
-        )
-        df = df.loc[df["in pairs"]]
         cached = cached.loc[df.index]
         logger.info("%d of %d spectra are cached", cached.sum(), len(df))
         if cached.all():
