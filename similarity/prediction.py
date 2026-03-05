@@ -19,41 +19,44 @@ class PredictedSpectrumCollection(Fixture):
 
     @staticmethod
     def process_predictions(
-        inputs: pd.DataFrame, result: dict[str, "np.ndarray"]
-    ) -> dict[tuple[str, int], "np.ndarray"]:
-        processed = {}
-        for i, (peptide, charge) in enumerate(
-            inputs[["peptide_sequences", "precursor_charges"]].values
-        ):
+        inputs: pd.DataFrame, result: dict[str, list["np.ndarray"]]
+    ) -> list[tuple[np.ndarray, np.ndarray]]:
+        processed = []
+        for i in range(inputs.shape[0]):
             idx = result["mz"][i] > 0
-            processed[(peptide, charge)] = (
-                result["mz"][i][idx],
-                result["intensities"][i][idx],
+            processed.append(
+                (
+                    result["mz"][i][idx],
+                    result["intensities"][i][idx],
+                )
             )
         return processed
 
     @staticmethod
     def save_predictions(
-        data: dict[tuple[str, int], "np.ndarray"], index: SpectrumIndex
+        data: list[tuple[np.ndarray, np.ndarray]], index: SpectrumIndex
     ) -> None:
         with index.transact():
-            for (peptide, charge), (mz, intensities) in data.items():
-                index[(peptide, charge)] = mz, intensities
+            for i, (mz, intensities) in enumerate(data):
+                index[i] = mz, intensities
 
     def evaluate(self, experiment: "Experiment") -> SpectrumIndex:
         df = experiment.peptides
         index = SpectrumIndex(experiment=experiment)
-        cached = df.apply(
-            lambda row: (row["peptide_sequences"], row["precursor_charges"]) in index,
-            axis=1,
-        )
-        cached = cached.loc[df.index]
-        logger.info("%d of %d spectra are cached", cached.sum(), len(df))
-        if cached.all():
-            logger.info("All spectra are cached, skipping prediction")
-            return index
+        # temporarily disable checking cache because we start with an empty one
+        # cached = df.apply(
+        #     lambda row: (row["peptide_sequences"], row["precursor_charges"]) in index,
+        #     axis=1,
+        # )
+        # cached = cached.loc[df.index]
+        # logger.info("%d of %d spectra are cached", cached.sum(), len(df))
+        # if cached.all():
+        #     logger.info("All spectra are cached, skipping prediction")
+        #     return index
+        # prediction_inputs = df.loc[~cached]
+        prediction_inputs = df
         model = Koina(experiment.config.model_intensity, experiment.config.koina_host)
-        prediction_inputs = df.loc[~cached]
+
         result = model.predict(prediction_inputs, df_output=False)
         logger.info("Preprocessing %d new predictions...", result["mz"].shape[0])
         data = self.process_predictions(prediction_inputs, result)
@@ -159,9 +162,12 @@ class MzIrtDataFrame(Fixture):
             )
             if unsupported.any():
                 logger.warning(
-                    "Found %d unsupported peptide sequences, these will be skipped: %s",
+                    "Found %d unsupported peptide sequences, they will be skipped",
                     unsupported.sum(),
-                    df.loc[unsupported, "peptide_sequences"].tolist(),
+                )
+                logger.debug(
+                    "Unsupported sequences:\n%s",
+                    df.loc[unsupported, "peptide_sequences"],
                 )
             df = df.loc[~unsupported].reset_index(drop=True)
 

@@ -113,12 +113,21 @@ class Index(diskcache.Index, ABC):
     def _full_key(self, key: str) -> tuple:
         pass
 
+    @staticmethod
+    def _get_cache_object(experiment: "Experiment") -> "diskcache.Cache":
+        if not hasattr(experiment, "_cache"):
+            experiment._cache = diskcache.Cache(
+                str(experiment.config.cache_dir),
+                size_limit=0,
+                cull_limit=0,
+                eviction_policy="none",
+            )
+        return experiment._cache
+
     def __new__(cls, experiment: "Experiment", *args, **kwargs):
-        assert (
-            experiment._cache is not None
-        ), "Experiment cache must be initialized before creating Index"
+        cache = cls._get_cache_object(experiment)
         instance = super().__new__(cls)
-        instance._cache = experiment._cache
+        instance._cache = cache
         return instance
 
     def __init__(self, experiment: "Experiment"):
@@ -139,12 +148,19 @@ class Index(diskcache.Index, ABC):
 
 
 class SpectrumIndex(Index):
-    def _full_key(self, key: tuple[str, int]) -> bytes:
-        config = self.experiment.config
-        return bytes(
-            f"{key[0]}_{config.collision_energy}_{key[1]}_{config.model_intensity}",
-            "ascii",
-        )
+    @staticmethod
+    def _get_cache_object(experiment: "Experiment") -> "diskcache.Cache":
+        if not hasattr(experiment, "_spectrum_cache"):
+            experiment._spectrum_cache = diskcache.Cache(
+                # not using the cache dir, will use temp dir
+                size_limit=0,
+                cull_limit=0,
+                eviction_policy="none",
+            )
+        return experiment._spectrum_cache
+
+    def _full_key(self, key: int) -> int:
+        return key
 
 
 class RTIndex(Index):
