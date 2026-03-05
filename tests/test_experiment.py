@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import dataclasses
 from similarity.experiment import Experiment
-from similarity.scoring import ScoringWorker
+from similarity.grouping import GroupingWorker
 from similarity.utils import Config
 from pathlib import Path
 import logging
@@ -136,7 +136,7 @@ class EquivalenceTest(TestBase):
                     )
                     self.logger.debug("m/z values for peptide 1: %s", mz1)
                     self.logger.debug("m/z values for peptide 2: %s", mz2)
-                    idx1, idx2 = ScoringWorker.match_peaks(
+                    idx1, idx2 = GroupingWorker.match_peaks(
                         mz1,
                         mz2,
                         atol=0.1,
@@ -247,13 +247,13 @@ class EquivalenceTest(TestBase):
                     x_matched, y_matched = matcher.match(x_df, y_df)
                     oldscore = nspectraangle(x_matched, y_matched, m=0, n=0.5)
 
-                    idx1, idx2 = ScoringWorker.match_peaks(
+                    idx1, idx2 = GroupingWorker.match_peaks(
                         x_df["mz"].values,
                         y_df["mz"].values,
                         atol=self.config.peak_tolerance,
                         rtol=self.config.peak_ppm / 1e6,
                     )
-                    newscore = ScoringWorker.similarity_score(
+                    newscore = GroupingWorker.similarity_score(
                         x_df["intensities"].values,
                         y_df["intensities"].values,
                         idx1,
