@@ -211,7 +211,7 @@ class Index(diskcache.Index, ABC):
                 self._write_to_cache(inputs, data)
             logger.info(
                 "Saved %d %s predictions to cache",
-                len(predictions[self.name]),
+                len(next(iter(predictions.values()))),
                 self.name,
             )
             self._save_queue.task_done()
@@ -223,7 +223,7 @@ class Index(diskcache.Index, ABC):
     ) -> None:
         logger.info(
             "Queueing %d %s predictions for saving to cache",
-            len(predictions[self.name]),
+            len(next(iter(predictions.values()))),
             self.name,
         )
         self._save_queue.put((inputs, predictions))
