@@ -141,6 +141,11 @@ class BaseIndex(ABC):
         pass
 
     @abstractmethod
+    def finalize(self):
+        """Signals that no further saves will be called."""
+        pass
+
+    @abstractmethod
     def fill_from_cache(self, inputs: "pd.DataFrame") -> None:
         """Fill missing values in inputs from cache."""
         pass
@@ -233,6 +238,9 @@ class Index(diskcache.Index, ABC):
         self._save_queue.join()
         self._saving_thread.join()
         logger.info("All pending %s predictions have been saved to cache", self.name)
+
+    def finalize(self):
+        self._done.set()
 
     def fill_from_cache(self, inputs: "pd.DataFrame") -> None:
         inputs[self.name] = inputs.apply(

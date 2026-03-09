@@ -86,6 +86,7 @@ class MzIrtDataFrame(Fixture):
             )
             if index is not None:
                 index.save_predictions(masked, result)
+                index.finalize()
 
             inputs.loc[mask, name] = result[name]
 
@@ -95,6 +96,7 @@ class MzIrtDataFrame(Fixture):
                     name,
                     inputs.loc[inputs[name].isna(), "peptide_sequences"].tolist(),
                 )
+
         else:
             logger.info("All %s values are cached, skipping prediction", name)
 
