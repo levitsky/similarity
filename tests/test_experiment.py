@@ -59,7 +59,7 @@ class TestBase(unittest.TestCase):
 class ExperimentTest(TestBase):
     def test_run(self):
         """Test that Experiment executes and returns something."""
-        for workers in [5, 1]:
+        for workers in [1, 5]:
             with self.subTest(workers=workers):
                 self.logger.info("Testing Experiment with %d workers", workers)
                 config = dataclasses.replace(self.config, workers=workers)

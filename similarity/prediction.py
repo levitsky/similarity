@@ -1,10 +1,9 @@
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 import pandas as pd
 import numpy as np
 from koinapy import Koina
 from .utils import Fixture, SpectrumIndex, RTIndex, IMIndex
 from pyteomics import cmass, auxiliary as aux, proforma
-import threading
 import logging
 
 if TYPE_CHECKING:
@@ -16,30 +15,6 @@ logger = logging.getLogger(__name__)
 
 
 class PredictedSpectrumCollection(Fixture):
-
-    @staticmethod
-    def process_predictions(
-        inputs: pd.DataFrame, result: dict[str, list["np.ndarray"]]
-    ) -> list[tuple[np.ndarray, np.ndarray]]:
-        processed = []
-        for i in range(inputs.shape[0]):
-            idx = result["mz"][i] > 0
-            processed.append(
-                (
-                    result["mz"][i][idx],
-                    result["intensities"][i][idx],
-                )
-            )
-        return processed
-
-    @staticmethod
-    def save_predictions(
-        data: list[tuple[np.ndarray, np.ndarray]], index: SpectrumIndex
-    ) -> None:
-        with index.transact():
-            for i, (mz, intensities) in enumerate(data):
-                index[i] = mz, intensities
-
     def evaluate(self, experiment: "Experiment") -> SpectrumIndex:
         df = experiment.peptides
         index = SpectrumIndex(experiment=experiment)
@@ -58,45 +33,12 @@ class PredictedSpectrumCollection(Fixture):
         model = Koina(experiment.config.model_intensity, experiment.config.koina_host)
 
         result = model.predict(prediction_inputs, df_output=False)
-        logger.info("Preprocessing %d new predictions...", result["mz"].shape[0])
-        data = self.process_predictions(prediction_inputs, result)
-        logger.info("Saving predictions to cache...")
-        self.save_predictions(data, index)
-        logger.info("Caching complete.")
+        index.save_predictions(prediction_inputs, result)
+        index.wait()
         return index
 
 
 class MzIrtDataFrame(Fixture):
-    @staticmethod
-    def _write_to_cache(df: pd.DataFrame, name: str, index: "Index") -> None:
-        key = MzIrtDataFrame.index_key(name)
-        with index.transact():
-            for _, row in df.iterrows():
-                index[key(row)] = row[name]
-        logger.info("Saved %d %s predictions to cache", df.shape[0], name)
-
-    @staticmethod
-    def save_predictions(df: pd.DataFrame, name: str, index: "Index | None") -> None:
-        if index is not None:
-            t = threading.Thread(
-                target=MzIrtDataFrame._write_to_cache, args=(df, name, index)
-            )
-            t.start()
-
-    @staticmethod
-    def index_key(name: str) -> Callable:
-        if name == "irt":
-            return lambda row: row["peptide_sequences"]
-
-        if name == "ccs":
-            return lambda row: (row["peptide_sequences"], row["precursor_charges"])
-
-        raise ValueError(f"Unknown prediction type: {name}")
-
-    @staticmethod
-    def load_from_cache(name: str, index: "Index", inputs: pd.DataFrame) -> None:
-        key = MzIrtDataFrame.index_key(name)
-        inputs[name] = inputs.apply(lambda row: index.get(key(row), np.nan), axis=1)
 
     def get_predictions(
         self,
@@ -113,7 +55,7 @@ class MzIrtDataFrame(Fixture):
                 "Skipping index lookup for %s prediction, no cache configured", name
             )
         else:
-            self.load_from_cache(name, index, inputs)
+            index.fill_from_cache(inputs)
             ncached = inputs[name].notna().sum()
             logger.info(
                 "%d of %d peptides are cached for %s prediction",
@@ -130,21 +72,28 @@ class MzIrtDataFrame(Fixture):
                 getattr(experiment.config, f"model_{name}"),
                 experiment.config.koina_host,
             )
-            df = model.predict(inputs.loc[inputs[name].isna()], df_output=True)
+            mask = inputs[name].isna()
+            masked = inputs.loc[mask]
+            result = model.predict(masked, df_output=False)
             logger.debug(
-                "Predicted %s values (%d rows in total):\n%s",
+                "Predicted %d %s values: %s",
+                result[name].size,
                 name,
-                df.shape[0],
-                df.head(),
+                result[name][:10],
             )
-            self.save_queue.append((df, name, index))
-            inputs.update(df[[name]])
+            if index is not None:
+                index.save_predictions(masked, result)
+                index.finalize()
+
+            inputs.loc[mask, name] = result[name]
+
             if inputs[name].isna().any():
                 logger.warning(
                     "Some %s values are still missing after prediction, these will be skipped: %s",
                     name,
                     inputs.loc[inputs[name].isna(), "peptide_sequences"].tolist(),
                 )
+
         else:
             logger.info("All %s values are cached, skipping prediction", name)
 
@@ -171,7 +120,6 @@ class MzIrtDataFrame(Fixture):
                 )
             df = df.loc[~unsupported].reset_index(drop=True)
 
-        self.save_queue = []
         if experiment.config.cache_properties:
             index = RTIndex(experiment=experiment)
         else:
@@ -221,7 +169,4 @@ class MzIrtDataFrame(Fixture):
         df["collision_energies"] = experiment.config.collision_energy
         if experiment.config.fragmentation_type is not None:
             df["fragmentation_types"] = experiment.config.fragmentation_type
-        for item in self.save_queue:
-            self.save_predictions(*item)
-        del self.save_queue
         return df
