@@ -214,12 +214,13 @@ class Index(diskcache.Index, ABC):
             data = self._preprocess_predictions(predictions)
             with self.transact():
                 self._write_to_cache(inputs, data)
-            logger.info(
+            logger.debug(
                 "Saved %d %s predictions to cache",
                 len(next(iter(predictions.values()))),
                 self.name,
             )
             self._save_queue.task_done()
+        logger.info("Saving %s complete", self.name)
 
     def save_predictions(
         self,
@@ -237,7 +238,6 @@ class Index(diskcache.Index, ABC):
         self._done.set()
         self._save_queue.join()
         self._saving_thread.join()
-        logger.info("All pending %s predictions have been saved to cache", self.name)
 
     def finalize(self):
         self._done.set()
