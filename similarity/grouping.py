@@ -2,7 +2,7 @@ import math
 from typing import Iterable, TYPE_CHECKING
 from scipy.spatial import cKDTree
 import numpy as np
-from multiprocessing.managers import SharedMemoryManager
+
 import logging
 import multiprocessing as mp
 from .utils import Fixture, ExperimentWorker
@@ -142,7 +142,7 @@ class GroupingWorker(ExperimentWorker):
 
     def run(self) -> None:
         self.mzrt = np.ndarray(
-            shape=self.shape, dtype=self.dtype, buffer=self.shared_memory.buf
+            shape=self.shape, dtype=np.float32, buffer=self.shared_memory.buf
         )
         while True:
             batch = self.task_queue.get()
@@ -151,17 +151,10 @@ class GroupingWorker(ExperimentWorker):
             for result in self.process_batch(batch):
                 self.result_queue.put(result)
         self.result_queue.put(None)
+        self.shared_memory.close()
 
 
 class SpectrumGrouping(Fixture):
-
-    def get_array(self, experiment: "Experiment") -> np.ndarray:
-        if experiment.config.model_ccs is not None:
-            mzrt = experiment.peptides[["m/z", "irt", "ccs"]].values
-        else:
-            mzrt = experiment.peptides[["m/z", "irt"]].values
-        return mzrt
-
     def kdtree(self, experiment: "Experiment", batch: int | None = None) -> cKDTree:
         df = experiment.peptides
         names = ["m/z", "irt"]
@@ -190,7 +183,6 @@ class SpectrumGrouping(Fixture):
     def evaluate(self, experiment: "Experiment") -> np.ndarray:
         tree = self.kdtree(experiment)
         logger.info("Built cKDTree with %d nodes from %d points", tree.size, tree.n)
-        mzrt = self.get_array(experiment)
         nb = self.nbatches(experiment)
         logger.info("Processing %d spectra in %d batches...", tree.n, nb)
         dtype = np.dtype([("i", int), ("j", int), ("score", float)])
@@ -201,47 +193,45 @@ class SpectrumGrouping(Fixture):
             )
             in_queue = mp.Queue()
             out_queue = mp.Queue()
-            with SharedMemoryManager() as smm:
-                shm = smm.SharedMemory(mzrt.nbytes)
-                arr = np.ndarray(mzrt.shape, dtype=mzrt.dtype, buffer=shm.buf)
-                np.copyto(arr, mzrt)
-                workers = [
-                    GroupingWorker(
-                        in_queue,
-                        out_queue,
-                        config=experiment.config,
-                        shared_memory=shm,
-                        shape=mzrt.shape,
-                        dtype=mzrt.dtype,
-                        tree=tree,
-                        spectra=experiment.predicted_spectra,
-                        radius=self.radius(experiment),
-                    )
-                    for _ in range(experiment.config.workers)
-                ]
-                for worker in workers:
-                    worker.start()
+            workers = [
+                GroupingWorker(
+                    in_queue,
+                    out_queue,
+                    config=experiment.config,
+                    shared_memory=experiment._shared_memory["mzrt"],
+                    shape=(
+                        len(experiment.peptides),
+                        3 if experiment.config.model_ccs is not None else 2,
+                    ),
+                    tree=tree,
+                    spectra=experiment.predicted_spectra,
+                    radius=self.radius(experiment),
+                )
+                for _ in range(experiment.config.workers)
+            ]
+            for worker in workers:
+                worker.start()
 
-                for batch in range(nb):
-                    in_queue.put(batch)
+            for batch in range(nb):
+                in_queue.put(batch)
 
-                for _ in range(experiment.config.workers):
-                    in_queue.put(None)
+            for _ in range(experiment.config.workers):
+                in_queue.put(None)
 
-                def produce_results():
-                    workers_done = 0
-                    while workers_done < len(workers):
-                        item = out_queue.get()
-                        if item is None:
-                            workers_done += 1
-                        else:
-                            i, matches, scores = item
-                            for m, s in zip(matches, scores):
-                                yield (i, m, s)
+            def produce_results():
+                workers_done = 0
+                while workers_done < len(workers):
+                    item = out_queue.get()
+                    if item is None:
+                        workers_done += 1
+                    else:
+                        i, matches, scores = item
+                        for m, s in zip(matches, scores):
+                            yield (i, m, s)
 
-                scores = np.fromiter(produce_results(), dtype=dtype)
-                for worker in workers:
-                    worker.join()
+            scores = np.fromiter(produce_results(), dtype=dtype)
+            for worker in workers:
+                worker.join()
         else:
             pseudoworker = GroupingWorker(
                 None,
@@ -251,7 +241,15 @@ class SpectrumGrouping(Fixture):
                 spectra=experiment.predicted_spectra,
                 radius=self.radius(experiment),
             )
-            pseudoworker.mzrt = mzrt
+
+            pseudoworker.mzrt = np.ndarray(
+                shape=(
+                    len(experiment.peptides),
+                    3 if experiment.config.model_ccs is not None else 2,
+                ),
+                dtype=np.float32,
+                buffer=experiment._shared_memory["mzrt"].buf,
+            )
 
             def produce_results():
                 for batch in range(nb):

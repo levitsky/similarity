@@ -142,8 +142,12 @@ class BaseIndex(ABC):
         pass
 
     @abstractmethod
-    def fill_from_cache(self, inputs: "pd.DataFrame") -> None:
+    def fill_from_cache(self, inputs: "pd.DataFrame", output: np.ndarray) -> None:
         """Fill missing values in inputs from cache."""
+        pass
+
+    @abstractmethod
+    def get(self, key: Any, default: Any = None) -> Any:
         pass
 
 
@@ -187,6 +191,12 @@ class Index(diskcache.Index, ABC):
     def __getitem__(self, key: Any) -> Any:
         full_key = self._full_key(key)
         return super().__getitem__(full_key)
+
+    def get(self, key: Any, default: Any = None) -> Any:
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
     def __setitem__(self, key: Any, value: Any) -> None:
         full_key = self._full_key(key)
@@ -249,10 +259,11 @@ class Index(diskcache.Index, ABC):
     def finalize(self):
         self._done.set()
 
-    def fill_from_cache(self, inputs: "pd.DataFrame") -> None:
-        inputs[self.name] = inputs.apply(
-            lambda row: self.get(self._key_from_row(row), np.nan), axis=1
-        )
+    def fill_from_cache(self, inputs: "pd.DataFrame", output: np.ndarray) -> None:
+        for i, (_, row) in enumerate(inputs.iterrows()):
+            key = self._key_from_row(row)
+            value = self.get(key, np.nan)
+            output[i] = value
 
 
 class SpectrumIndex(Index):

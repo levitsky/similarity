@@ -48,20 +48,19 @@ def experiment():
         kw.pop(key)
 
     config = Config(**kw)
-    exp = Experiment(config)
+    with Experiment(config) as exp:
+        logger.debug(getattr(args, "output_file", "Output file not set"))
+        if args.output_file:
+            exp.score_df.to_csv(args.output_file, index=False, sep="\t")
+            logger.info("Saved results to %s", args.output_file)
 
-    logger.debug(getattr(args, "output_file", "Output file not set"))
-    if args.output_file:
-        exp.score_df.to_csv(args.output_file, index=False, sep="\t")
-        logger.info("Saved results to %s", args.output_file)
+        if args.peptide_file:
+            exp.peptides.to_csv(args.peptide_file, index=False, sep="\t")
+            logger.info("Saved peptide table to %s", args.peptide_file)
 
-    if args.peptide_file:
-        exp.peptides.to_csv(args.peptide_file, index=False, sep="\t")
-        logger.info("Saved peptide table to %s", args.peptide_file)
-
-    if args.array_file:
-        np.save(args.array_file, exp.score_array)
-        logger.info("Saved raw score arrays to %s", args.array_file)
+        if args.array_file:
+            np.save(args.array_file, exp.score_array)
+            logger.info("Saved raw score arrays to %s", args.array_file)
 
 
 if __name__ == "__main__":

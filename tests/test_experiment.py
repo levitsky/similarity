@@ -63,29 +63,31 @@ class ExperimentTest(TestBase):
             with self.subTest(workers=workers):
                 self.logger.info("Testing Experiment with %d workers", workers)
                 config = dataclasses.replace(self.config, workers=workers)
-                exp = Experiment(config)
-                result = exp.score_df.sort_values(["i", "j"])
-                self.logger.debug("Final result:\n%s", result)
-                self.assertEqual(
-                    result.shape[0], 9
-                )  # Assuming 9 pairs based on the test input
-                self.assertTrue(
-                    np.allclose(
-                        result["score"],
-                        [
-                            0.847243,
-                            0.816326,
-                            0.724647,
-                            0.912134,
-                            0.772697,
-                            0.81768,
-                            0.974192,
-                            0.858346,
-                            0.933183,
-                        ],
-                        atol=1e-3,
+                with Experiment(config) as exp:
+                    result = exp.score_df.sort_values(["score"])
+                    self.logger.debug("Final result:\n%s", result)
+                    self.assertEqual(
+                        result.shape[0], 9
+                    )  # Assuming 9 pairs based on the test input
+                    self.assertTrue(
+                        np.allclose(
+                            result["score"],
+                            sorted(
+                                [
+                                    0.847243,
+                                    0.816326,
+                                    0.724647,
+                                    0.912134,
+                                    0.772697,
+                                    0.81768,
+                                    0.974192,
+                                    0.858346,
+                                    0.933183,
+                                ]
+                            ),
+                            atol=1e-3,
+                        )
                     )
-                )
 
     def test_multiple_charges(self):
         config = dataclasses.replace(self.config, max_charge=3)
