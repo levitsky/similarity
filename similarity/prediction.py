@@ -19,17 +19,17 @@ class PredictedSpectrumCollection(Fixture):
     def evaluate(self, experiment: "Experiment") -> SpectrumIndex:
         df = experiment.peptides
         index = SpectrumIndex(experiment=experiment)
-        # temporarily disable checking cache because we start with an empty one
-        # cached = df.apply(
-        #     lambda row: (row["peptide_sequences"], row["precursor_charges"]) in index,
-        #     axis=1,
-        # )
+
+        cached = df.apply(
+            lambda row: (row["peptide_sequences"], row["precursor_charges"]) in index,
+            axis=1,
+        )
         # cached = cached.loc[df.index]
-        # logger.info("%d of %d spectra are cached", cached.sum(), len(df))
-        # if cached.all():
-        #     logger.info("All spectra are cached, skipping prediction")
-        #     return index
-        # prediction_inputs = df.loc[~cached]
+        logger.info("%d of %d spectra are cached", cached.sum(), len(df))
+        if cached.all():
+            logger.info("All spectra are cached, skipping prediction")
+            return index
+        prediction_inputs = df.loc[~cached]
         prediction_inputs = df
         model = Koina(experiment.config.model_intensity, experiment.config.koina_host)
 

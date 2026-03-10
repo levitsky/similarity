@@ -269,25 +269,15 @@ class Index(diskcache.Index, ABC):
 class SpectrumIndex(Index):
     name = "intensity"  # not used as a key, but for logging and debugging
 
-    @staticmethod
-    def _get_cache_object(experiment: "Experiment") -> "diskcache.Cache":
-        if not hasattr(experiment, "_spectrum_cache"):
-            experiment._spectrum_cache = diskcache.Cache(
-                # not using the cache dir, will use temp dir
-                size_limit=0,
-                cull_limit=0,
-                eviction_policy="none",
-            )
-        return experiment._spectrum_cache
-
-    def _full_key(self, key: int) -> int:
-        # temporary change: use index as key
-        return key
+    def _full_key(self, key: tuple[bytes, int]) -> bytes:
+        config = self.experiment.config
+        return key[0] + bytes(
+            f"_{key[1]}_{config.collision_energy}_{config.fragmentation_type}_{config.model_intensity}",
+            "ascii",
+        )
 
     def _key_from_row(self, row: "pd.Series") -> Any:
-        # temporary change: use index
-        return row.name
-        # return row["peptide_sequences"], row["precursor_charges"]
+        return row["peptide_sequences"], row["precursor_charges"]
 
     def _preprocess_predictions(
         self, predictions: dict[str, np.ndarray]
@@ -307,23 +297,23 @@ class SpectrumIndex(Index):
 class RTIndex(Index):
     name = "irt"
 
-    def _key_from_row(self, row: "pd.Series") -> str:
+    def _key_from_row(self, row: "pd.Series") -> bytes:
         return row["peptide_sequences"]
 
-    def _full_key(self, key: str) -> bytes:
+    def _full_key(self, key: bytes) -> bytes:
         config = self.experiment.config
-        return bytes(f"{key}_{config.model_irt}", "ascii")
+        return key + bytes(config.model_irt, "ascii")
 
 
 class IMIndex(Index):
     name = "ccs"
 
-    def _key_from_row(self, row: "pd.Series") -> tuple[str, int]:
+    def _key_from_row(self, row: "pd.Series") -> tuple[bytes, int]:
         return row["peptide_sequences"], row["charge"]
 
-    def _full_key(self, key: tuple[str, int]) -> bytes:
+    def _full_key(self, key: tuple[bytes, int]) -> bytes:
         config = self.experiment.config
-        return bytes(f"{key[0]}_{key[1]}_{config.model_ccs}", "ascii")
+        return key[0] + bytes(f"_{key[1]}_{config.model_ccs}", "ascii")
 
 
 class ExperimentWorker(ABC, mp.Process):

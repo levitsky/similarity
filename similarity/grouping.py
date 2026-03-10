@@ -25,9 +25,11 @@ class GroupingWorker(ExperimentWorker):
     tree: cKDTree
     radius: float
     shape: tuple[int, ...]
-    dtype: np.dtype
-    shared_memory: "SharedMemory"
+    seq_dtype: np.dtype
+    shared_memory: dict[str, "SharedMemory"]
     spectra: "SpectrumIndex"
+    peptides: np.ndarray
+    charges: np.ndarray
 
     def within_tolerance_2d(self, i: int, j: int) -> bool:
         arr = self.mzrt
@@ -94,8 +96,8 @@ class GroupingWorker(ExperimentWorker):
         return score
 
     def score_pair(self, i: int, j: int) -> float:
-        mz1, intensities1 = self.spectra[i]
-        mz2, intensities2 = self.spectra[j]
+        mz1, intensities1 = self.spectra[(self.peptides[i], self.charges[i])]
+        mz2, intensities2 = self.spectra[(self.peptides[j], self.charges[j])]
         idx1, idx2 = GroupingWorker.match_peaks(
             mz1,
             mz2,
@@ -142,7 +144,17 @@ class GroupingWorker(ExperimentWorker):
 
     def run(self) -> None:
         self.mzrt = np.ndarray(
-            shape=self.shape, dtype=np.float32, buffer=self.shared_memory.buf
+            shape=self.shape, dtype=np.float32, buffer=self.shared_memory["mzrt"].buf
+        )
+        self.peptides = np.ndarray(
+            shape=(self.shape[0],),
+            dtype=self.seq_dtype,
+            buffer=self.shared_memory["peptide_sequences"].buf,
+        )
+        self.charges = np.ndarray(
+            shape=(self.shape[0],),
+            dtype=np.uint8,
+            buffer=self.shared_memory["precursor_charges"].buf,
         )
         while True:
             batch = self.task_queue.get()
@@ -151,7 +163,8 @@ class GroupingWorker(ExperimentWorker):
             for result in self.process_batch(batch):
                 self.result_queue.put(result)
         self.result_queue.put(None)
-        self.shared_memory.close()
+        for shm in self.shared_memory.values():
+            shm.close()
 
 
 class SpectrumGrouping(Fixture):
@@ -198,11 +211,12 @@ class SpectrumGrouping(Fixture):
                     in_queue,
                     out_queue,
                     config=experiment.config,
-                    shared_memory=experiment._shared_memory["mzrt"],
+                    shared_memory=experiment._shared_memory,
                     shape=(
                         len(experiment.peptides),
                         3 if experiment.config.model_ccs is not None else 2,
                     ),
+                    seq_dtype=experiment.peptides["peptide_sequences"].dtype,
                     tree=tree,
                     spectra=experiment.predicted_spectra,
                     radius=self.radius(experiment),
@@ -250,6 +264,8 @@ class SpectrumGrouping(Fixture):
                 dtype=np.float32,
                 buffer=experiment._shared_memory["mzrt"].buf,
             )
+            pseudoworker.peptides = experiment.peptides["peptide_sequences"].values
+            pseudoworker.charges = experiment.peptides["precursor_charges"].values
 
             def produce_results():
                 for batch in range(nb):
