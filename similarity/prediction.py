@@ -30,7 +30,6 @@ class PredictedSpectrumCollection(Fixture):
             logger.info("All spectra are cached, skipping prediction")
             return index
         prediction_inputs = df.loc[~cached]
-        prediction_inputs = df
         model = Koina(experiment.config.model_intensity, experiment.config.koina_host)
 
         result = model.predict(prediction_inputs, df_output=False)
