@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 import dataclasses
 from similarity.experiment import Experiment
-from similarity.scoring import ScoringWorker
-from similarity.utils import Config
+from similarity.grouping import GroupingWorker
+from similarity.utils.config import Config
 from pathlib import Path
 import logging
 
@@ -59,33 +59,35 @@ class TestBase(unittest.TestCase):
 class ExperimentTest(TestBase):
     def test_run(self):
         """Test that Experiment executes and returns something."""
-        for workers in [5, 1]:
+        for workers in [1, 5]:
             with self.subTest(workers=workers):
                 self.logger.info("Testing Experiment with %d workers", workers)
                 config = dataclasses.replace(self.config, workers=workers)
-                exp = Experiment(config)
-                result = exp.score_df.sort_values(["i", "j"])
-                self.logger.debug("Final result:\n%s", result)
-                self.assertEqual(
-                    result.shape[0], 9
-                )  # Assuming 9 pairs based on the test input
-                self.assertTrue(
-                    np.allclose(
-                        result["score"],
-                        [
-                            0.847243,
-                            0.816326,
-                            0.724647,
-                            0.912134,
-                            0.772697,
-                            0.81768,
-                            0.974192,
-                            0.858346,
-                            0.933183,
-                        ],
-                        atol=1e-3,
+                with Experiment(config) as exp:
+                    result = exp.score_df.sort_values(["score"])
+                    self.logger.debug("Final result:\n%s", result)
+                    self.assertEqual(
+                        result.shape[0], 9
+                    )  # Assuming 9 pairs based on the test input
+                    self.assertTrue(
+                        np.allclose(
+                            result["score"],
+                            sorted(
+                                [
+                                    0.847243,
+                                    0.816326,
+                                    0.724647,
+                                    0.912134,
+                                    0.772697,
+                                    0.81768,
+                                    0.974192,
+                                    0.858346,
+                                    0.933183,
+                                ]
+                            ),
+                            atol=1e-3,
+                        )
                     )
-                )
 
     def test_multiple_charges(self):
         config = dataclasses.replace(self.config, max_charge=3)
@@ -136,7 +138,7 @@ class EquivalenceTest(TestBase):
                     )
                     self.logger.debug("m/z values for peptide 1: %s", mz1)
                     self.logger.debug("m/z values for peptide 2: %s", mz2)
-                    idx1, idx2 = ScoringWorker.match_peaks(
+                    idx1, idx2 = GroupingWorker.match_peaks(
                         mz1,
                         mz2,
                         atol=0.1,
@@ -247,13 +249,13 @@ class EquivalenceTest(TestBase):
                     x_matched, y_matched = matcher.match(x_df, y_df)
                     oldscore = nspectraangle(x_matched, y_matched, m=0, n=0.5)
 
-                    idx1, idx2 = ScoringWorker.match_peaks(
+                    idx1, idx2 = GroupingWorker.match_peaks(
                         x_df["mz"].values,
                         y_df["mz"].values,
                         atol=self.config.peak_tolerance,
                         rtol=self.config.peak_ppm / 1e6,
                     )
-                    newscore = ScoringWorker.similarity_score(
+                    newscore = GroupingWorker.similarity_score(
                         x_df["intensities"].values,
                         y_df["intensities"].values,
                         idx1,

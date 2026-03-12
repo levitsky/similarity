@@ -1,44 +1,40 @@
 from typing import TYPE_CHECKING
 import pandas as pd
 import numpy as np
+from multiprocessing.shared_memory import SharedMemory
 from koinapy import Koina
-from .utils import Fixture, SpectrumIndex, RTIndex, IMIndex
-from pyteomics import cmass, auxiliary as aux, proforma
+from .utils.abc import Fixture, IndexType
+from pyteomics import cmass, auxiliary as aux, proforma, parser
 import logging
 
 if TYPE_CHECKING:
     import numpy as np
+    from numpy.typing import DTypeLike
     from .experiment import Experiment
-    from .utils import Index
+    from .utils.abc import Index, SpectrumCollection
 
 logger = logging.getLogger(__name__)
 
 
 class PredictedSpectrumCollection(Fixture):
-    def evaluate(self, experiment: "Experiment") -> SpectrumIndex:
+    def evaluate(self, experiment: "Experiment") -> "SpectrumCollection":
         df = experiment.peptides
-        index = SpectrumIndex(experiment=experiment)
-        # make sure pairs are calculated
-        experiment.pairs
-        cached = df.apply(
-            lambda row: (row["peptide_sequences"], row["precursor_charges"]) in index,
-            axis=1,
-        )
-        logger.info(
-            "Dropping %d peptides not in any pairs", (df["in pairs"] == False).sum()
-        )
-        df = df.loc[df["in pairs"]]
-        cached = cached.loc[df.index]
-        logger.info("%d of %d spectra are cached", cached.sum(), len(df))
+        index = experiment.config.cache.value.get_index(IndexType.INTENSITY, experiment)
+        collection = experiment.config.spectrum_collection.value(experiment)
+
+        cached = collection.spectra_available
         if cached.all():
             logger.info("All spectra are cached, skipping prediction")
-            return index
-        model = Koina(experiment.config.model_intensity, experiment.config.koina_host)
+            return collection
         prediction_inputs = df.loc[~cached]
+        model = Koina(experiment.config.model_intensity, experiment.config.koina_host)
+
         result = model.predict(prediction_inputs, df_output=False)
-        index.save_predictions(prediction_inputs, result)
-        index.wait()
-        return index
+        if index is not None:
+            index.save_predictions(prediction_inputs, result)
+
+        assert collection.is_ready()
+        return collection
 
 
 class MzIrtDataFrame(Fixture):
@@ -48,18 +44,23 @@ class MzIrtDataFrame(Fixture):
         name: str,
         index: "Index | None",
         inputs: pd.DataFrame,
+        output: np.ndarray,
         experiment: "Experiment",
-    ) -> None:
-
+    ):
+        logger.debug(
+            "Getting %s predictions. Target array shape: %s", name, output.shape
+        )
         if index is None:
-            inputs[name] = np.nan
+            output[:] = np.nan
             ncached = 0
+            mask = np.ones_like(output, dtype=bool)
             logger.info(
                 "Skipping index lookup for %s prediction, no cache configured", name
             )
         else:
-            index.fill_from_cache(inputs)
-            ncached = inputs[name].notna().sum()
+            index.fill_from_cache(inputs, output)
+            mask = np.isnan(output)
+            ncached = (~mask).sum()
             logger.info(
                 "%d of %d peptides are cached for %s prediction",
                 ncached,
@@ -75,11 +76,10 @@ class MzIrtDataFrame(Fixture):
                 getattr(experiment.config, f"model_{name}"),
                 experiment.config.koina_host,
             )
-            mask = inputs[name].isna()
             masked = inputs.loc[mask]
             result = model.predict(masked, df_output=False)
             logger.debug(
-                "Predicted %d %s values: %s",
+                "Predicted %d %s values:\n%s",
                 result[name].size,
                 name,
                 result[name][:10],
@@ -88,84 +88,150 @@ class MzIrtDataFrame(Fixture):
                 index.save_predictions(masked, result)
                 index.finalize()
 
-            inputs.loc[mask, name] = result[name]
+            output[mask] = result[name].reshape(-1)
 
-            if inputs[name].isna().any():
-                logger.warning(
+            if np.isnan(output).any():
+                logger.error(
                     "Some %s values are still missing after prediction, these will be skipped: %s",
                     name,
-                    inputs.loc[inputs[name].isna(), "peptide_sequences"].tolist(),
+                    inputs.loc[np.isnan(inputs[name]), "peptide_sequences"].tolist(),
                 )
-
         else:
             logger.info("All %s values are cached, skipping prediction", name)
 
+    @staticmethod
+    def shared_array(
+        experiment: "Experiment", name: str, shape: tuple[int, ...], dtype: "DTypeLike"
+    ) -> np.ndarray:
+        if name in experiment._shared_memory:
+            shm = experiment._shared_memory[name]
+        else:
+            shm = SharedMemory(
+                name=f"{name}-{id(experiment)}",
+                create=True,
+                size=np.prod(shape, dtype=int) * np.dtype(dtype).itemsize,
+            )
+            experiment._shared_memory[name] = shm
+        return np.ndarray(shape, dtype=dtype, buffer=shm.buf)
+
     def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
         input_file = experiment.config.input_file
-        df = pd.read_table(input_file, names=["peptide_sequences"], header=None)
-        logger.info("Loaded %d peptide sequences from %s", len(df), input_file)
-        df.drop_duplicates(inplace=True)
-        logger.info(
-            "After dropping duplicates, %d unique peptide sequences remain", len(df)
-        )
+        seq = np.unique(np.loadtxt(input_file, dtype=bytes))
+
+        logger.info("Loaded %d unique peptide sequences from %s", len(seq), input_file)
+
         if not experiment.config.nonstandard_aminoacids and not experiment.config.ptms:
-            unsupported = df["peptide_sequences"].str.contains(
-                "[^ACDEFGHIKLMNPQRSTVWY]", regex=True
-            )
+            common_aa = set(map(lambda s: bytes(s, "ascii")[0], parser.std_amino_acids))
+            unsupported = np.array([bool(set(s) - common_aa) for s in seq])
+            logger.debug("Unsupported mask:\n%s", unsupported[:10])
             if unsupported.any():
                 logger.warning(
-                    "Found %d unsupported peptide sequences, these will be skipped: %s",
+                    "Found %d unsupported peptide sequences, they will be skipped",
                     unsupported.sum(),
-                    df.loc[unsupported, "peptide_sequences"].tolist(),
                 )
-            df = df.loc[~unsupported].reset_index(drop=True)
+                logger.debug(
+                    "Unsupported sequences:\n%s",
+                    "\n".join(
+                        list(seq[unsupported][:10].astype(str))
+                        + (["..."] if unsupported.sum() > 10 else [])
+                    ),
+                )
+            seq = seq[~unsupported]
 
+        if seq.size == 0:
+            logger.error("No valid peptide sequences found in input file, aborting")
+            return pd.DataFrame()
+
+        ncharges = experiment.config.max_charge - experiment.config.min_charge + 1
+        npeptides = len(seq)
+        nprecursors = npeptides * ncharges
+        logger.info("%d total precursors to analyze", nprecursors)
+
+        seq_array = self.shared_array(
+            experiment, "peptide_sequences", shape=(nprecursors,), dtype=seq.dtype
+        )
+        for i in range(ncharges):
+            seq_array[i * npeptides : (i + 1) * npeptides] = seq
+
+        mzrt_shape = (nprecursors, 3 if experiment.config.model_ccs is not None else 2)
+
+        mzrt = self.shared_array(experiment, "mzrt", shape=mzrt_shape, dtype=np.float32)
         if experiment.config.cache_properties:
-            index = RTIndex(experiment=experiment)
+            index = experiment.config.cache.value.get_index(IndexType.IRT, experiment)
         else:
             index = None
-        self.get_predictions("irt", index, df, experiment)
+        self.get_predictions(
+            "irt",
+            index,
+            pd.DataFrame({"peptide_sequences": seq}, copy=False),
+            mzrt[:npeptides, 1],
+            experiment,
+        )
+        logger.debug("Predicted iRT values:\n%s", mzrt[:10, 1])
+        for i in range(1, ncharges):
+            mzrt[i * npeptides : (i + 1) * npeptides, 1] = mzrt[:npeptides, 1]
 
-        df["precursor_charges"] = experiment.config.min_charge
-        dfs = [df]
-        if experiment.config.max_charge > experiment.config.min_charge:
-            for charge in range(
-                experiment.config.min_charge + 1, experiment.config.max_charge + 1
-            ):
-                df_copy = df.copy()
-                df_copy["precursor_charges"] = charge
-                dfs.append(df_copy)
-            df = pd.concat(dfs, ignore_index=True).reset_index(drop=True)
-            logger.info(
-                "Expanded dataframe to %d rows by adding charge states from %d to %d",
-                len(df),
-                experiment.config.min_charge,
-                experiment.config.max_charge,
-            )
+        charge_array = self.shared_array(
+            experiment, "precursor_charges", shape=(nprecursors,), dtype=np.uint8
+        )
+        for charge in range(
+            experiment.config.min_charge, experiment.config.max_charge + 1
+        ):
+            charge_array[
+                (charge - experiment.config.min_charge)
+                * npeptides : (charge - experiment.config.min_charge + 1)
+                * npeptides
+            ] = charge
+
+        peptide_data = {
+            "peptide_sequences": seq_array,
+            "precursor_charges": charge_array,
+            "irt": mzrt[:, 1],
+            "m/z": mzrt[:, 0],
+        }
 
         if experiment.config.model_ccs is not None:
             if experiment.config.cache_properties:
-                index = IMIndex(experiment=experiment)
+                index = experiment.config.cache.value.get_index(
+                    IndexType.CCS, experiment
+                )
             else:
                 index = None
-            self.get_predictions("ccs", index, df, experiment)
+            self.get_predictions(
+                "ccs",
+                index,
+                pd.DataFrame(
+                    {"peptide_sequences": seq_array, "precursor_charges": charge_array},
+                    copy=False,
+                ),
+                mzrt[:, 2],
+                experiment,
+            )
+            peptide_data["ccs"] = mzrt[:, 2]
 
         if experiment.config.ptms:
-
-            def mz(row):
-                seq = row["peptide_sequences"]
-                charge = row["precursor_charges"]
+            for i, (peptide, charge) in enumerate(
+                zip(
+                    peptide_data["peptide_sequences"], peptide_data["precursor_charges"]
+                )
+            ):
+                peptide = peptide.decode("ascii")
                 try:
-                    return cmass.fast_mass(seq, charge=charge)
-                except aux.PyteomicsError as e:
-                    return proforma.ProForma.parse(seq).mz(charge=charge)
+                    mzrt[i, 0] = cmass.fast_mass(peptide, charge=charge)
+                except aux.PyteomicsError:
+                    mzrt[i, 0] = proforma.ProForma.parse(peptide).mz(charge=charge)
 
         else:
-            mz = lambda row: cmass.fast_mass(
-                row["peptide_sequences"], charge=row["precursor_charges"]
-            )
+            for i, (peptide, charge) in enumerate(
+                zip(
+                    peptide_data["peptide_sequences"], peptide_data["precursor_charges"]
+                )
+            ):
+                peptide = peptide.decode("ascii")
+                mzrt[i, 0] = cmass.fast_mass(peptide, charge=charge)
 
-        df["m/z"] = df.apply(mz, axis=1)
+        df = pd.DataFrame(peptide_data, copy=False)
+        # the rest of the columns are not in shared memory
         df["collision_energies"] = experiment.config.collision_energy
         if experiment.config.fragmentation_type is not None:
             df["fragmentation_types"] = experiment.config.fragmentation_type

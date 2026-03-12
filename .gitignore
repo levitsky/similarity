@@ -8,4 +8,5 @@ cache.db*
 *.html
 *.npy
 *.log
-*.txt
+./*.txt
+.stfolder
