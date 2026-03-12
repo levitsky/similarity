@@ -1,4 +1,4 @@
-from .utils import Config
+from .utils.config import Config
 from .experiment import Experiment
 from pathlib import Path
 import numpy as np

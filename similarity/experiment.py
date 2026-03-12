@@ -1,5 +1,5 @@
 import logging
-from .utils import Config
+from .utils.config import Config
 from .prediction import PredictedSpectrumCollection, MzIrtDataFrame
 from .grouping import SpectrumGrouping
 from .output import ScoresDataFrame
@@ -9,16 +9,22 @@ if TYPE_CHECKING:
     from multiprocessing.shared_memory import SharedMemory
     import pandas as pd
     import numpy as np
-    from .utils import SpectrumIndex
+    from .utils.abc import SpectrumCollection
 
 logger = logging.getLogger(__name__)
 
 
 class Experiment:
-    peptides: "pd.DataFrame" = MzIrtDataFrame()
-    predicted_spectra: "SpectrumIndex" = PredictedSpectrumCollection()
-    score_array: "np.ndarray" = SpectrumGrouping()
-    score_df: "pd.DataFrame" = ScoresDataFrame()
+    if TYPE_CHECKING:
+        peptides: "pd.DataFrame"
+        predicted_spectra: "SpectrumCollection"
+        score_array: "np.ndarray"
+        score_df: "pd.DataFrame"
+    else:
+        peptides = MzIrtDataFrame()
+        predicted_spectra = PredictedSpectrumCollection()
+        score_array = SpectrumGrouping()
+        score_df = ScoresDataFrame()
     _shared_memory: dict[str, "SharedMemory"]
 
     def __init__(self, config: Config):
@@ -30,6 +36,7 @@ class Experiment:
             shm = self._shared_memory.pop(key)
             shm.close()
             shm.unlink()
+        self.predicted_spectra.close()
 
     def __del__(self):
         self.__cleanup()

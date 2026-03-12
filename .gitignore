@@ -9,3 +9,4 @@ cache.db*
 *.npy
 *.log
 ./*.txt
+.stfolder

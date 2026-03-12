@@ -1,9 +1,7 @@
 from typing import TYPE_CHECKING
-import numpy as np
 import pandas as pd
 import logging
-import multiprocessing as mp
-from .utils import Fixture, ExperimentWorker
+from .utils.abc import Fixture
 
 if TYPE_CHECKING:
     from .experiment import Experiment

@@ -4,7 +4,7 @@ import pandas as pd
 import dataclasses
 from similarity.experiment import Experiment
 from similarity.grouping import GroupingWorker
-from similarity.utils import Config
+from similarity.utils.config import Config
 from pathlib import Path
 import logging
 

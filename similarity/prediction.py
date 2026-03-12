@@ -3,39 +3,38 @@ import pandas as pd
 import numpy as np
 from multiprocessing.shared_memory import SharedMemory
 from koinapy import Koina
-from .utils import Fixture, SpectrumIndex, RTIndex, IMIndex
+from .utils.abc import Fixture, IndexType
 from pyteomics import cmass, auxiliary as aux, proforma, parser
 import logging
 
 if TYPE_CHECKING:
     import numpy as np
+    from numpy.typing import DTypeLike
     from .experiment import Experiment
-    from .utils import Index
+    from .utils.abc import Index, SpectrumCollection
 
 logger = logging.getLogger(__name__)
 
 
 class PredictedSpectrumCollection(Fixture):
-    def evaluate(self, experiment: "Experiment") -> SpectrumIndex:
+    def evaluate(self, experiment: "Experiment") -> "SpectrumCollection":
         df = experiment.peptides
-        index = SpectrumIndex(experiment=experiment)
+        index = experiment.config.cache.value.get_index(IndexType.INTENSITY, experiment)
+        collection = experiment.config.spectrum_collection.value(experiment)
 
-        cached = df.apply(
-            lambda row: (row["peptide_sequences"], row["precursor_charges"]) in index,
-            axis=1,
-        )
-        # cached = cached.loc[df.index]
-        logger.info("%d of %d spectra are cached", cached.sum(), len(df))
+        cached = collection.spectra_available
         if cached.all():
             logger.info("All spectra are cached, skipping prediction")
-            return index
+            return collection
         prediction_inputs = df.loc[~cached]
         model = Koina(experiment.config.model_intensity, experiment.config.koina_host)
 
         result = model.predict(prediction_inputs, df_output=False)
-        index.save_predictions(prediction_inputs, result)
-        index.wait()
-        return index
+        if index is not None:
+            index.save_predictions(prediction_inputs, result)
+
+        assert collection.is_ready()
+        return collection
 
 
 class MzIrtDataFrame(Fixture):
@@ -102,7 +101,7 @@ class MzIrtDataFrame(Fixture):
 
     @staticmethod
     def shared_array(
-        experiment: "Experiment", name: str, shape: tuple[int, ...], dtype: np.dtype
+        experiment: "Experiment", name: str, shape: tuple[int, ...], dtype: "DTypeLike"
     ) -> np.ndarray:
         if name in experiment._shared_memory:
             shm = experiment._shared_memory[name]
@@ -158,7 +157,7 @@ class MzIrtDataFrame(Fixture):
 
         mzrt = self.shared_array(experiment, "mzrt", shape=mzrt_shape, dtype=np.float32)
         if experiment.config.cache_properties:
-            index = RTIndex(experiment=experiment)
+            index = experiment.config.cache.value.get_index(IndexType.IRT, experiment)
         else:
             index = None
         self.get_predictions(
@@ -193,7 +192,9 @@ class MzIrtDataFrame(Fixture):
 
         if experiment.config.model_ccs is not None:
             if experiment.config.cache_properties:
-                index = IMIndex(experiment=experiment)
+                index = experiment.config.cache.value.get_index(
+                    IndexType.CCS, experiment
+                )
             else:
                 index = None
             self.get_predictions(

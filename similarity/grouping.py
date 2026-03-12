@@ -5,12 +5,13 @@ import numpy as np
 
 import logging
 import multiprocessing as mp
-from .utils import Fixture, ExperimentWorker
+from .utils.abc import Fixture
+from .utils.utils import ExperimentWorker
 
 
 if TYPE_CHECKING:
     from .experiment import Experiment, Config
-    from .utils import SpectrumIndex
+    from .utils.abc import SpectrumCollection
     from multiprocessing.shared_memory import SharedMemory
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ class GroupingWorker(ExperimentWorker):
     shape: tuple[int, ...]
     seq_dtype: np.dtype
     shared_memory: dict[str, "SharedMemory"]
-    spectra: "SpectrumIndex"
+    spectra: "SpectrumCollection"
     peptides: np.ndarray
     charges: np.ndarray
 
@@ -95,15 +96,9 @@ class GroupingWorker(ExperimentWorker):
 
         return score
 
-    def spectrum_key(self, i: int) -> Any:
-        return (self.peptides[i], self.charges[i])
-
-    def get_spectrum(self, i: int) -> tuple[np.ndarray, np.ndarray]:
-        return self.spectra[self.spectrum_key(i)]
-
     def score_pair(self, i: int, j: int) -> float:
-        mz1, intensities1 = self.get_spectrum(i)
-        mz2, intensities2 = self.get_spectrum(j)
+        mz1, intensities1 = self.spectra[i]
+        mz2, intensities2 = self.spectra[j]
         idx1, idx2 = GroupingWorker.match_peaks(
             mz1,
             mz2,
