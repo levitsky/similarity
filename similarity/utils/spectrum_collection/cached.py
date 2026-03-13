@@ -44,7 +44,7 @@ class CachedSpectrumCollection(SpectrumCollection):
         pass
 
     def fill_from_predictions(
-        self, inputs: "pd.DataFrame", predictions: dict[str, "np.ndarray"]
+        self, inputs: "pd.DataFrame", predictions: dict[str, list["np.ndarray"]]
     ) -> None:
         """Nothing to do because all spectra are saved to cache anyway before the collection can be used."""
         pass

@@ -178,6 +178,7 @@ class MzIrtDataFrame(Fixture):
         mzrt_shape = (nprecursors, 3 if experiment.config.model_ccs is not None else 2)
 
         mzrt = self.shared_array(experiment, "mzrt", shape=mzrt_shape, dtype=np.float32)
+        mzrt[:] = np.nan
         if experiment.config.cache_properties:
             index = experiment.cache[IndexType.IRT]
         else:

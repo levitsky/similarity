@@ -245,6 +245,7 @@ class SpectrumGrouping(Fixture):
                     item = out_queue.get()
                     if item is None:
                         workers_done += 1
+                        logger.debug("%d workers done", workers_done)
                     else:
                         i, matches, scores = item
                         for m, s in zip(matches, scores):
