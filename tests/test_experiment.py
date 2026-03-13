@@ -1,10 +1,13 @@
 import unittest
 import numpy as np
+import multiprocessing as mp
 import pandas as pd
 import dataclasses
 from similarity.experiment import Experiment
 from similarity.grouping import GroupingWorker
 from similarity.utils.config import Config
+from similarity.utils.cache import CacheType
+from similarity.utils.spectrum_collection import SpectrumCollectionType
 from pathlib import Path
 import logging
 
@@ -60,41 +63,61 @@ class ExperimentTest(TestBase):
     def test_run(self):
         """Test that Experiment executes and returns something."""
         for workers in [1, 5]:
-            with self.subTest(workers=workers):
-                self.logger.info("Testing Experiment with %d workers", workers)
-                config = dataclasses.replace(self.config, workers=workers)
-                with Experiment(config) as exp:
-                    result = exp.score_df.sort_values(["score"])
-                    self.logger.debug("Final result:\n%s", result)
-                    self.assertEqual(
-                        result.shape[0], 9
-                    )  # Assuming 9 pairs based on the test input
-                    self.assertTrue(
-                        np.allclose(
-                            result["score"],
-                            sorted(
-                                [
-                                    0.847243,
-                                    0.816326,
-                                    0.724647,
-                                    0.912134,
-                                    0.772697,
-                                    0.81768,
-                                    0.974192,
-                                    0.858346,
-                                    0.933183,
-                                ]
-                            ),
-                            atol=1e-3,
+            for cache_type in CacheType:
+                for spectrum_collection_type in SpectrumCollectionType:
+                    with self.subTest(
+                        workers=workers,
+                        cache_type=cache_type,
+                        spectrum_collection_type=spectrum_collection_type,
+                    ):
+                        if (
+                            cache_type == CacheType.NONE
+                            and spectrum_collection_type
+                            == SpectrumCollectionType.CACHED
+                        ):
+                            self.logger.info(
+                                "Skipping combination of CacheType.NONE and SpectrumCollectionType.CACHED because it is not valid."
+                            )
+                            continue
+                        self.logger.info("Testing Experiment with %d workers", workers)
+                        config = dataclasses.replace(
+                            self.config,
+                            workers=workers,
+                            cache=cache_type,
+                            spectrum_collection=spectrum_collection_type,
                         )
-                    )
+                        with Experiment(config) as exp:
+                            result = exp.score_df.sort_values(["score"])
+                            self.logger.debug("Final result:\n%s", result)
+                            self.assertEqual(
+                                result.shape[0], 9
+                            )  # Assuming 9 pairs based on the test input
+                            self.assertTrue(
+                                np.allclose(
+                                    result["score"],
+                                    sorted(
+                                        [
+                                            0.847243,
+                                            0.816326,
+                                            0.724647,
+                                            0.912134,
+                                            0.772697,
+                                            0.81768,
+                                            0.974192,
+                                            0.858346,
+                                            0.933183,
+                                        ]
+                                    ),
+                                    atol=1e-3,
+                                )
+                            )
 
     def test_multiple_charges(self):
         config = dataclasses.replace(self.config, max_charge=3)
-        exp = Experiment(config)
-        self.assertEqual(exp.peptides["precursor_charges"].max(), 3)
-        self.assertEqual(exp.peptides.shape[0], 56)
-        self.assertEqual(exp.score_df.shape[0], 18)
+        with Experiment(config) as exp:
+            self.assertEqual(exp.peptides["precursor_charges"].max(), 3)
+            self.assertEqual(exp.peptides.shape[0], 56)
+            self.assertEqual(exp.score_df.shape[0], 18)
 
     def test_ptms(self):
         """Test that Experiment can handle peptides with PTMs."""
@@ -105,10 +128,10 @@ class ExperimentTest(TestBase):
             model_intensity="Prosit_2025_intensity_40PTM",
             fragmentation_type="HCD",
         )
-        exp = Experiment(config)
-        self.assertTrue(np.allclose(exp.peptides["irt"], [115.689156, 2.694990]))
-        self.assertTrue(np.allclose(exp.peptides["m/z"], [580.382344, 501.752743]))
-        self.assertEqual(exp.score_df.shape[0], 0)
+        with Experiment(config) as exp:
+            self.assertTrue(np.allclose(exp.peptides["irt"], [115.689156, 2.694990]))
+            self.assertTrue(np.allclose(exp.peptides["m/z"], [580.382344, 501.752743]))
+            self.assertEqual(exp.score_df.shape[0], 0)
 
 
 class EquivalenceTest(TestBase):
@@ -275,4 +298,5 @@ class EquivalenceTest(TestBase):
 
 
 if __name__ == "__main__":
+    mp.set_start_method("forkserver")
     unittest.main()

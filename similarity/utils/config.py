@@ -57,6 +57,7 @@ class Config(BaseConfig):
     cache_dir: Path = Path(".")
     cache_properties: bool = False
     workers: int = mp.cpu_count()
-    batch_size: int = 10000
+    batch_size: int = 5000
     score_threshold: float = 0.0
-    spectrum_collection: SpectrumCollectionType = SpectrumCollectionType.CACHED
+    spectrum_collection: SpectrumCollectionType = SpectrumCollectionType.SHAREDARRAY
+    max_peaks: int = 50

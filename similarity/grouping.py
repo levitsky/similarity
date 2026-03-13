@@ -2,11 +2,12 @@ import math
 from typing import Iterable, TYPE_CHECKING, Any
 from scipy.spatial import cKDTree
 import numpy as np
-
+import os
 import logging
 import multiprocessing as mp
 from .utils.abc import Fixture
 from .utils.utils import ExperimentWorker
+from .prediction import MzIrtDataFrame
 
 
 if TYPE_CHECKING:
@@ -26,6 +27,7 @@ class GroupingWorker(ExperimentWorker):
     tree: cKDTree
     radius: float
     shape: tuple[int, ...]
+    nbatches: int
     seq_dtype: np.dtype
     shared_memory: dict[str, "SharedMemory"]
     spectra: "SpectrumCollection"
@@ -115,14 +117,11 @@ class GroupingWorker(ExperimentWorker):
         then get the filtered pairs from `out_queue` (in chunks). Also sets the "in pairs" column of the dataframe to True for spectra that are in any pair.
         """
 
-        logger.info(
-            "Processing batch %d...",
-            batch + 1,
-        )
+        logger.info("Processing batch %d of %d...", batch + 1, self.nbatches)
         subtree = self.kdtree(batch)
 
         offset = batch * self.config.batch_size
-        logger.debug("Batch idx %d, offset %d", batch, offset)
+        logger.debug("Batch idx %d, offset %d, PID %d", batch, offset, os.getpid())
 
         neighbors = self.tree.query_ball_tree(subtree, r=self.radius)
 
@@ -144,6 +143,7 @@ class GroupingWorker(ExperimentWorker):
         self.within_tolerance = self.tolerance_check()
 
     def run(self) -> None:
+        logger.debug("Worker started with PID %d", os.getpid())
         self.mzrt = np.ndarray(
             shape=self.shape, dtype=np.float32, buffer=self.shared_memory["mzrt"].buf
         )
@@ -160,12 +160,17 @@ class GroupingWorker(ExperimentWorker):
         while True:
             batch = self.task_queue.get()
             if batch is None:
+                logger.debug(
+                    "Worker with PID %d received None, wrapping up...", os.getpid()
+                )
                 break
             for result in self.process_batch(batch):
                 self.result_queue.put(result)
         self.result_queue.put(None)
         for shm in self.shared_memory.values():
             shm.close()
+        self.spectra.worker_close()
+        logger.debug("Worker with PID %d finished", os.getpid())
 
 
 class SpectrumGrouping(Fixture):
@@ -212,7 +217,8 @@ class SpectrumGrouping(Fixture):
                     in_queue,
                     out_queue,
                     config=experiment.config,
-                    shared_memory=experiment._shared_memory,
+                    shared_memory=MzIrtDataFrame._shared_memory[experiment],
+                    nbatches=nb,
                     shape=(
                         len(experiment.peptides),
                         3 if experiment.config.model_ccs is not None else 2,
@@ -251,6 +257,7 @@ class SpectrumGrouping(Fixture):
             pseudoworker = GroupingWorker(
                 None,
                 None,
+                nbatches=self.nbatches(experiment),
                 config=experiment.config,
                 tree=tree,
                 spectra=experiment.predicted_spectra,
@@ -263,7 +270,7 @@ class SpectrumGrouping(Fixture):
                     3 if experiment.config.model_ccs is not None else 2,
                 ),
                 dtype=np.float32,
-                buffer=experiment._shared_memory["mzrt"].buf,
+                buffer=MzIrtDataFrame._shared_memory[experiment]["mzrt"].buf,
             )
             pseudoworker.peptides = experiment.peptides["peptide_sequences"].values
             pseudoworker.charges = experiment.peptides["precursor_charges"].values

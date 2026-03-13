@@ -69,7 +69,7 @@ class Index(ABC):
     def save_predictions(
         self,
         inputs: "pd.DataFrame",
-        predictions: dict[str, "np.ndarray"],
+        predictions: dict[str, list["np.ndarray"]],
     ) -> None:
         """Asyncronously save predictions to cache."""
         pass
@@ -128,6 +128,13 @@ class SpectrumCollection(ABC):
         """Fill missing spectra from cache."""
         pass
 
+    @abstractmethod
+    def fill_from_predictions(
+        self, inputs: "pd.DataFrame", predictions: dict[str, list["np.ndarray"]]
+    ) -> None:
+        """Fill missing spectra from predictions."""
+        pass
+
     @property
     @abstractmethod
     def spectra_available(self) -> "NDArray[np.bool_]":
@@ -139,6 +146,11 @@ class SpectrumCollection(ABC):
 
     def close(self):
         """Close any resources used by the collection, such as shared memory."""
+        pass
+
+    @abstractmethod
+    def worker_close(self):
+        """Close any resources used by worker processes, such as database connections."""
         pass
 
 

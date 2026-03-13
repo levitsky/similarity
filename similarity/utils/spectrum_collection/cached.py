@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from ...experiment import Experiment
     from numpy.typing import NDArray
     import numpy as np
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,13 @@ class CachedSpectrumCollection(SpectrumCollection):
         return self.index[self._index_key(key)]
 
     def fill_from_cache(self, experiment: "Experiment", index: "Index") -> None:
+        """Nothing to do because all spectra are loaded on demand from cache."""
+        pass
+
+    def fill_from_predictions(
+        self, inputs: "pd.DataFrame", predictions: dict[str, "np.ndarray"]
+    ) -> None:
+        """Nothing to do because all spectra are saved to cache anyway before the collection can be used."""
         pass
 
     @property
@@ -52,6 +60,9 @@ class CachedSpectrumCollection(SpectrumCollection):
         return available
 
     def close(self):
+        self.index.close()
+
+    def worker_close(self):
         self.index.close()
 
     def is_ready(self) -> bool:
