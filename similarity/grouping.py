@@ -113,9 +113,6 @@ class GroupingWorker(ExperimentWorker):
         self,
         batch: int,
     ) -> Iterable[tuple[int, list[int], list[float]]]:
-        """Make a batch of size config.batch_size of the input array and find potential neighbor pairs, submit them to `in_queue`,
-        then get the filtered pairs from `out_queue` (in chunks). Also sets the "in pairs" column of the dataframe to True for spectra that are in any pair.
-        """
 
         logger.info("Processing batch %d of %d...", batch + 1, self.nbatches)
         subtree = self.kdtree(batch)
@@ -204,7 +201,7 @@ class SpectrumGrouping(Fixture):
         logger.info("Built cKDTree with %d nodes from %d points", tree.size, tree.n)
         nb = self.nbatches(experiment)
         logger.info("Processing %d spectra in %d batches...", tree.n, nb)
-        dtype = np.dtype([("i", int), ("j", int), ("score", float)])
+        dtype = np.dtype([("i", np.int32), ("j", np.int32), ("score", np.float32)])
         if experiment.config.workers > 1:
             logger.info(
                 "Grouping with %d workers...",

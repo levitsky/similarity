@@ -43,6 +43,7 @@ class Experiment:
         while self.cache:
             _, index = self.cache.popitem()
             if index is not None:
+                logger.debug("Closing cache %s for experiment %d", index, id(self))
                 index.close()
 
     def __enter__(self):

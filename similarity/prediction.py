@@ -33,7 +33,7 @@ class PredictedSpectrumCollection(Fixture):
         collection.fill_from_predictions(prediction_inputs, result)  # type: ignore
         if index is not None:
             index.save_predictions(prediction_inputs, result)  # type: ignore
-
+            index.finalize()
         assert collection.is_ready()
         return collection
 

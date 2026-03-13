@@ -71,9 +71,6 @@ class Index(diskcache.Index, BaseIndex, ABC):
             return default
 
     def __setitem__(self, key: Any, value: Any) -> None:
-        if not self.writable:
-            self.writable = True
-            self._saving_thread.start()
         full_key = self._full_key(key)
         super().__setitem__(full_key, value)
 
@@ -132,6 +129,9 @@ class Index(diskcache.Index, BaseIndex, ABC):
             len(next(iter(predictions.values()))),
             self.name,
         )
+        if not self.writable:
+            self.writable = True
+            self._saving_thread.start()
         self._save_queue.put((inputs, predictions))
 
     def wait(self):
