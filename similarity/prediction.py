@@ -26,7 +26,6 @@ class PredictedSpectrumCollection(Fixture):
         return result
 
     def evaluate(self, experiment: "Experiment") -> "SpectrumCollection":
-        df = experiment.peptides
         index = experiment.cache[IndexType.INTENSITY]
         collection = experiment.config.spectrum_collection.value(experiment)
         if index is not None:
@@ -35,15 +34,28 @@ class PredictedSpectrumCollection(Fixture):
         if cached.all():
             logger.info("All spectra are cached, skipping prediction")
             return collection
-        prediction_inputs = df.loc[~cached]
+        prediction_inputs = experiment.peptides.loc[~cached]
         model = Koina(experiment.config.model_intensity, experiment.config.koina_host)
 
-        result: dict[str, list["np.ndarray"]] = model.predict(prediction_inputs, df_output=False)  # type: ignore
-        result = self.preprocess_predictions(result)
+        bsize = experiment.config.batch_size
+        nbatches = (prediction_inputs.shape[0] + bsize - 1) // bsize
+        logger.info(
+            "Predicting spectra for %d peptides in %d batches of size %d...",
+            prediction_inputs.shape[0],
+            nbatches,
+            bsize,
+        )
+        for i in range(nbatches):
+            logger.debug("Predicting batch %d of %d ...", i + 1, nbatches)
+            batch_inputs = prediction_inputs.iloc[i * bsize : (i + 1) * bsize]
+            result: dict[str, list["np.ndarray"]] = model.predict(batch_inputs, df_output=False, disable_progress_bar=True)  # type: ignore
+            result = self.preprocess_predictions(result)
 
-        collection.fill_from_predictions(prediction_inputs, result)
+            collection.fill_from_predictions(batch_inputs, result)
+            if index is not None:
+                index.save_predictions(batch_inputs, result)
+
         if index is not None:
-            index.save_predictions(prediction_inputs, result)
             index.finalize()
         assert collection.is_ready()
         return collection

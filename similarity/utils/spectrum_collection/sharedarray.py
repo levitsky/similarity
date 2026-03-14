@@ -88,16 +88,16 @@ class SharedArraySpectrumCollection(SpectrumCollection):
         self, inputs: DataFrame, predictions: dict[str, list["np.ndarray"]]
     ) -> None:
         maxpeaks = self.experiment.config.max_peaks
-        for i in range(len(inputs)):
-            mz = predictions["mz"][i]
-            intensities = predictions["intensities"][i]
+        for iloc, loc in enumerate(inputs.index):
+            mz = predictions["mz"][iloc]
+            intensities = predictions["intensities"][iloc]
             len_spectrum = min(len(mz), maxpeaks)
             if len_spectrum < len(mz):
                 idx = np.argsort(intensities)[-maxpeaks:]
                 mz = mz[idx]
                 intensities = intensities[idx]
-            self.array[i, 0, :len_spectrum] = mz
-            self.array[i, 1, :len_spectrum] = intensities
+            self.array[loc, 0, :len_spectrum] = mz
+            self.array[loc, 1, :len_spectrum] = intensities
 
     @property
     def spectra_available(self) -> "NDArray[np.bool_]":
