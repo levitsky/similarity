@@ -238,6 +238,7 @@ class SpectrumGrouping(Fixture):
 
             def produce_results():
                 workers_done = 0
+                count = 0
                 while workers_done < len(workers):
                     item = out_queue.get()
                     if item is None:
@@ -245,8 +246,11 @@ class SpectrumGrouping(Fixture):
                         logger.debug("%d workers done", workers_done)
                     else:
                         i, matches, scores = item
+                        count += 1
                         for m, s in zip(matches, scores):
                             yield (i, m, s)
+                        if count % experiment.config.batch_size == 0:
+                            logger.debug("Processed %d peptides...", count)
 
             scores = np.fromiter(produce_results(), dtype=dtype)
             for worker in workers:
