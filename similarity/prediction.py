@@ -6,6 +6,8 @@ from koinapy import Koina
 from .utils.abc import Fixture, IndexType
 from pyteomics import cmass, auxiliary as aux, proforma, parser
 import logging
+from tqdm import trange
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 if TYPE_CHECKING:
     import numpy as np
@@ -17,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 
 class PredictedSpectrumCollection(Fixture):
+    batch_factor: int = 5
+
     @staticmethod
     def preprocess_predictions(
         result: dict[str, list["np.ndarray"]],
@@ -37,7 +41,7 @@ class PredictedSpectrumCollection(Fixture):
         prediction_inputs = experiment.peptides.loc[~cached]
         model = Koina(experiment.config.model_intensity, experiment.config.koina_host)
 
-        bsize = experiment.config.batch_size
+        bsize = experiment.config.batch_size * self.batch_factor
         nbatches = (prediction_inputs.shape[0] + bsize - 1) // bsize
         logger.info(
             "Predicting spectra for %d peptides in %d batches of size %d...",
@@ -45,15 +49,18 @@ class PredictedSpectrumCollection(Fixture):
             nbatches,
             bsize,
         )
-        for i in range(nbatches):
-            logger.debug("Predicting batch %d of %d ...", i + 1, nbatches)
-            batch_inputs = prediction_inputs.iloc[i * bsize : (i + 1) * bsize]
-            result: dict[str, list["np.ndarray"]] = model.predict(batch_inputs, df_output=False, disable_progress_bar=True)  # type: ignore
-            result = self.preprocess_predictions(result)
+        with logging_redirect_tqdm():
+            for i in trange(
+                nbatches, desc=experiment.config.model_intensity, unit="batch"
+            ):
+                logger.debug("Predicting batch %d of %d ...", i + 1, nbatches)
+                batch_inputs = prediction_inputs.iloc[i * bsize : (i + 1) * bsize]
+                result: dict[str, list["np.ndarray"]] = model.predict(batch_inputs, df_output=False, mode="async", disable_progress_bar=True)  # type: ignore
+                result = self.preprocess_predictions(result)
 
-            collection.fill_from_predictions(batch_inputs, result)
-            if index is not None:
-                index.save_predictions(batch_inputs, result)
+                collection.fill_from_predictions(batch_inputs, result)
+                if index is not None:
+                    index.save_predictions(batch_inputs, result)
 
         if index is not None:
             index.finalize()
@@ -63,6 +70,7 @@ class PredictedSpectrumCollection(Fixture):
 
 class MzIrtDataFrame(Fixture):
     _shared_memory: dict["Experiment", dict[str, SharedMemory]] = {}
+    batch_factor: int = 5
 
     @classmethod
     def close(cls, experiment: "Experiment"):
@@ -112,7 +120,7 @@ class MzIrtDataFrame(Fixture):
                 experiment.config.koina_host,
             )
             masked = inputs.loc[mask]
-            bsize = experiment.config.batch_size
+            bsize = experiment.config.batch_size * self.batch_factor
             idx = np.where(mask)[0]
             nbatches = (idx.shape[0] + bsize - 1) // bsize
             logger.info(
@@ -121,16 +129,26 @@ class MzIrtDataFrame(Fixture):
                 nbatches,
                 bsize,
             )
-            for i in range(nbatches):
-                logger.debug("Predicting %s batch %d of %d ...", name, i + 1, nbatches)
-                batch_idx = idx[i * bsize : (i + 1) * bsize]
-                batch_masked = masked.loc[batch_idx]
-                result = model.predict(
-                    batch_masked, df_output=False, disable_progress_bar=True
-                )
-                output[batch_idx] = result[name].reshape(-1)
-                if index is not None:
-                    index.save_predictions(masked, result)  # type: ignore
+            with logging_redirect_tqdm():
+                for i in trange(
+                    nbatches,
+                    desc=f"{getattr(experiment.config, f'model_{name}')}",
+                    unit="batch",
+                ):
+                    logger.debug(
+                        "Predicting %s batch %d of %d ...", name, i + 1, nbatches
+                    )
+                    batch_idx = idx[i * bsize : (i + 1) * bsize]
+                    batch_masked = masked.loc[batch_idx]
+                    result = model.predict(
+                        batch_masked,
+                        df_output=False,
+                        mode="async",
+                        disable_progress_bar=True,
+                    )
+                    output[batch_idx] = result[name].reshape(-1)
+                    if index is not None:
+                        index.save_predictions(masked, result)  # type: ignore
 
             if index is not None:
                 index.finalize()
