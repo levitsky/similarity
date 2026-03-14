@@ -3,6 +3,7 @@ import argparse
 from dataclasses import dataclass, fields
 from types import UnionType
 import multiprocessing as mp
+from enum import EnumType
 from .cache import CacheType
 from .spectrum_collection import SpectrumCollectionType
 
@@ -13,6 +14,8 @@ class BaseConfig:
     def get_type(ftype):
         if isinstance(ftype, UnionType):
             return ftype.__args__[0]
+        if isinstance(ftype, EnumType):
+            return lambda name: getattr(ftype, name)
         return ftype
 
     @staticmethod
@@ -25,13 +28,20 @@ class BaseConfig:
     def argparser(cls) -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser(description="Experiment configuration")
         for field in fields(cls):
+            name = f"--{field.name.replace('_', '-')}"
             kw = dict(default=field.default, required=cls.get_required(field))
             if field.type is bool:
-                # for bools, use action='store_true' and default to False
-                kw["action"] = "store_true"
+                if field.default:
+                    kw["action"] = "store_false"
+                    kw["dest"] = field.name
+                    name = f"--no-{field.name.replace('_', '-')}"
+                else:
+                    kw["action"] = "store_true"
             else:
                 kw["type"] = cls.get_type(field.type)
-            parser.add_argument(f"--{field.name.replace('_', '-')}", **kw)
+            if isinstance(field.type, EnumType):
+                kw["choices"] = list(field.type)
+            parser.add_argument(name, **kw)
         return parser
 
 
