@@ -117,20 +117,20 @@ class GroupingWorker(ExperimentWorker):
         offset = batch * self.config.batch_size
         logger.debug("Batch idx %d, offset %d, PID %d", batch, offset, os.getpid())
 
-        neighbors = self.tree.query_ball_tree(subtree, r=self.radius)
+        neighbors = subtree.query_ball_tree(self.tree, r=self.radius)
 
-        for i, indices in enumerate(neighbors):
+        for x, indices in enumerate(neighbors):
             matches = []
             scores = []
-            for x in indices:
-                j = x + offset
+            j = x + offset
+            for i in indices:
                 if i < j and self.within_tolerance(i, j):
                     score = self.score_pair(i, j)
                     if score >= self.config.score_threshold:
-                        matches.append(j)
+                        matches.append(i)
                         scores.append(score)
             if matches:
-                yield (i, matches, scores)
+                yield (j, matches, scores)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
