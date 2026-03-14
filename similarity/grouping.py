@@ -299,4 +299,9 @@ class SpectrumGrouping(Fixture):
                             yield (i, m, s)
 
             scores = np.fromiter(produce_results(), dtype=dtype)
+        logger.info(
+            "Finished scoring, found %d pairs with score above %f",
+            len(scores),
+            experiment.config.score_threshold,
+        )
         return scores
