@@ -64,6 +64,9 @@ class Index(diskcache.Index, BaseIndex, ABC):
         full_key = self._full_key(key)
         return super().__getitem__(full_key)
 
+    def __len__(self) -> int:
+        return len(self._cache)
+
     def get(self, key: Any, default: Any = None) -> Any:
         try:
             return self[key]

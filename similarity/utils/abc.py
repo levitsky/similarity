@@ -66,6 +66,10 @@ class Index(ABC):
         pass
 
     @abstractmethod
+    def __len__(self) -> int:
+        pass
+
+    @abstractmethod
     def save_predictions(
         self,
         inputs: "pd.DataFrame",
