@@ -49,7 +49,6 @@ def experiment():
 
     config = Config(**kw)
     with Experiment(config) as exp:
-        logger.debug(getattr(args, "output_file", "Output file not set"))
         if args.output_file:
             exp.score_df.to_csv(args.output_file, index=False, sep="\t")
             logger.info("Saved results to %s", args.output_file)
