@@ -135,9 +135,6 @@ class MzIrtDataFrame(Fixture):
                     desc=f"{getattr(experiment.config, f'model_{name}')}",
                     unit="batch",
                 ):
-                    logger.debug(
-                        "Predicting %s batch %d of %d ...", name, i + 1, nbatches
-                    )
                     batch_idx = idx[i * bsize : (i + 1) * bsize]
                     batch_masked = masked.loc[batch_idx]
                     result = model.predict(
@@ -148,10 +145,7 @@ class MzIrtDataFrame(Fixture):
                     )
                     output[batch_idx] = result[name].reshape(-1)
                     if index is not None:
-                        index.save_predictions(masked, result)  # type: ignore
-
-            if index is not None:
-                index.finalize()
+                        index.save_predictions(batch_masked, result)  # type: ignore
 
             if np.isnan(output).any():
                 logger.error(
@@ -159,6 +153,8 @@ class MzIrtDataFrame(Fixture):
                     name,
                     output,
                 )
+            if index is not None:
+                index.finalize()
         else:
             logger.info("All %s values are cached, skipping prediction", name)
 

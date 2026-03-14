@@ -3,6 +3,7 @@ import logging
 import numpy as np
 from pandas import DataFrame
 from multiprocessing.shared_memory import SharedMemory
+from tqdm import tqdm
 from ..abc import SpectrumCollection
 
 if TYPE_CHECKING:
@@ -70,9 +71,13 @@ class SharedArraySpectrumCollection(SpectrumCollection):
 
     def fill_from_cache(self, experiment: "Experiment", index: "Index") -> None:
         maxpeaks = experiment.config.max_peaks
-        for i, pep, charge in experiment.peptides[
-            ["peptide_sequences", "precursor_charges"]
-        ].itertuples():
+        for i, pep, charge in tqdm(
+            experiment.peptides[
+                ["peptide_sequences", "precursor_charges"]
+            ].itertuples(),
+            total=len(experiment.peptides),
+            desc=f"Loading spectra from cache",
+        ):
             key = (pep, charge)
             mz, intensities = index.get(key, (None, None))
             if mz is not None and intensities is not None:
