@@ -142,22 +142,15 @@ class EquivalenceTest(TestBase):
 
     def test_peak_matching(self):
         """Test that the peak matching logic correctly identifies matching peaks."""
-        exp = Experiment(self.config)
-        for i, indices in exp.pairs:
-            for j in indices:
+        with Experiment(self.config) as exp:
+            for i, j, score in exp.score_array:
                 with self.subTest(pair=(i, j)):
-                    pep1 = exp.peptides.loc[i, "peptide_sequences"]
-                    pep2 = exp.peptides.loc[j, "peptide_sequences"]
-                    charge1 = exp.peptides.loc[i, "precursor_charges"]
-                    charge2 = exp.peptides.loc[j, "precursor_charges"]
-                    mz1, intensities1 = exp.predicted_spectra[(pep1, charge1)]
-                    mz2, intensities2 = exp.predicted_spectra[(pep2, charge2)]
+                    mz1, intensities1 = exp.predicted_spectra[i]
+                    mz2, intensities2 = exp.predicted_spectra[j]
                     self.logger.debug(
-                        "Testing peak matching for peptides %d, %d: %s and %s",
+                        "Testing peak matching for peptides %d, %d",
                         i,
                         j,
-                        pep1,
-                        pep2,
                     )
                     self.logger.debug("m/z values for peptide 1: %s", mz1)
                     self.logger.debug("m/z values for peptide 2: %s", mz2)
@@ -236,24 +229,17 @@ class EquivalenceTest(TestBase):
 
     def test_similarity_score(self):
         """Test that the similarity score is calculated correctly."""
-        exp = Experiment(self.config)
-        spectra = exp.predicted_spectra
-        pairs = exp.pairs
-        for i, indices in pairs:
-            for j in indices:
+        with Experiment(self.config) as exp:
+            for i, j, score in exp.score_array:
                 with self.subTest(pair=(i, j)):
-                    pep1 = exp.peptides.loc[i, "peptide_sequences"]
-                    pep2 = exp.peptides.loc[j, "peptide_sequences"]
-                    charge1 = exp.peptides.loc[i, "precursor_charges"]
-                    charge2 = exp.peptides.loc[j, "precursor_charges"]
                     matcher = joinPeaks(
                         tolerance=self.config.peak_tolerance, ppm=self.config.peak_ppm
                     )
                     x_df = (
                         pd.DataFrame(
                             {
-                                "mz": spectra[(pep1, charge1)][0],
-                                "intensities": spectra[(pep1, charge1)][1],
+                                "mz": exp.predicted_spectra[i][0],
+                                "intensities": exp.predicted_spectra[i][1],
                             }
                         )
                         .sort_values(by="mz")
@@ -262,8 +248,8 @@ class EquivalenceTest(TestBase):
                     y_df = (
                         pd.DataFrame(
                             {
-                                "mz": spectra[(pep2, charge2)][0],
-                                "intensities": spectra[(pep2, charge2)][1],
+                                "mz": exp.predicted_spectra[j][0],
+                                "intensities": exp.predicted_spectra[j][1],
                             }
                         )
                         .sort_values(by="mz")
@@ -285,11 +271,7 @@ class EquivalenceTest(TestBase):
                         idx2,
                     )
                     self.logger.debug(
-                        "Testing similarity score for peptides %d, %d: %s and %s",
-                        i,
-                        j,
-                        pep1,
-                        pep2,
+                        "Testing similarity score for peptides %d, %d", i, j
                     )
                     self.logger.debug(
                         "Old score: %f, New score: %f", oldscore, newscore
