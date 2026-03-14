@@ -106,6 +106,21 @@ class GroupingWorker(ExperimentWorker):
         )
         return GroupingWorker.similarity_score(intensities1, intensities2, idx1, idx2)
 
+    @staticmethod
+    def encode_result(i: int, matches: list[int], scores: list[float]) -> tuple:
+        return (
+            i,
+            np.array(matches, dtype=np.int32).tobytes(),
+            np.array(scores, dtype=np.float32).tobytes(),
+        )
+
+    @staticmethod
+    def decode_result(encoded: tuple) -> tuple[int, np.ndarray, np.ndarray]:
+        i, matches_bytes, scores_bytes = encoded
+        matches = np.frombuffer(matches_bytes, dtype=np.int32)
+        scores = np.frombuffer(scores_bytes, dtype=np.float32)
+        return i, matches, scores
+
     def process_batch(
         self,
         batch: int,
@@ -130,7 +145,7 @@ class GroupingWorker(ExperimentWorker):
                         matches.append(i)
                         scores.append(score)
             if matches:
-                yield (j, matches, scores)
+                yield self.encode_result(j, matches, scores)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -244,7 +259,7 @@ class SpectrumGrouping(Fixture):
                             "%d of %d workers done", workers_done, len(workers)
                         )
                     else:
-                        i, matches, scores = item
+                        i, matches, scores = GroupingWorker.decode_result(item)
                         count += 1
                         for m, s in zip(matches, scores):
                             yield (i, m, s)
@@ -279,7 +294,7 @@ class SpectrumGrouping(Fixture):
             def produce_results():
                 for batch in range(nb):
                     for item in pseudoworker.process_batch(batch):
-                        i, matches, scores = item
+                        i, matches, scores = GroupingWorker.decode_result(item)
                         for m, s in zip(matches, scores):
                             yield (i, m, s)
 
