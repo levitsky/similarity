@@ -19,9 +19,10 @@ logger = logging.getLogger(__name__)
 class PredictedSpectrumCollection(Fixture):
     def evaluate(self, experiment: "Experiment") -> "SpectrumCollection":
         df = experiment.peptides
-        index = experiment.config.cache.value.get_index(IndexType.INTENSITY, experiment)
+        index = experiment.cache[IndexType.INTENSITY]
         collection = experiment.config.spectrum_collection.value(experiment)
-
+        if index is not None:
+            collection.fill_from_cache(experiment, index)
         cached = collection.spectra_available
         if cached.all():
             logger.info("All spectra are cached, skipping prediction")
@@ -30,14 +31,26 @@ class PredictedSpectrumCollection(Fixture):
         model = Koina(experiment.config.model_intensity, experiment.config.koina_host)
 
         result = model.predict(prediction_inputs, df_output=False)
+        collection.fill_from_predictions(prediction_inputs, result)  # type: ignore
         if index is not None:
-            index.save_predictions(prediction_inputs, result)
-
+            index.save_predictions(prediction_inputs, result)  # type: ignore
+            index.finalize()
         assert collection.is_ready()
         return collection
 
 
 class MzIrtDataFrame(Fixture):
+    _shared_memory: dict["Experiment", dict[str, SharedMemory]] = {}
+
+    @classmethod
+    def close(cls, experiment: "Experiment"):
+        shm_dict = cls._shared_memory.pop(experiment, {})
+        for name, shm in shm_dict.items():
+            logger.debug(
+                "Closing shared memory for experiment %d, name %s", id(experiment), name
+            )
+            shm.close()
+            shm.unlink()
 
     def get_predictions(
         self,
@@ -85,7 +98,7 @@ class MzIrtDataFrame(Fixture):
                 result[name][:10],
             )
             if index is not None:
-                index.save_predictions(masked, result)
+                index.save_predictions(masked, result)  # type: ignore
                 index.finalize()
 
             output[mask] = result[name].reshape(-1)
@@ -99,19 +112,29 @@ class MzIrtDataFrame(Fixture):
         else:
             logger.info("All %s values are cached, skipping prediction", name)
 
-    @staticmethod
+    @classmethod
     def shared_array(
-        experiment: "Experiment", name: str, shape: tuple[int, ...], dtype: "DTypeLike"
+        cls,
+        experiment: "Experiment",
+        name: str,
+        shape: tuple[int, ...],
+        dtype: "DTypeLike",
     ) -> np.ndarray:
-        if name in experiment._shared_memory:
-            shm = experiment._shared_memory[name]
+        cls._shared_memory.setdefault(experiment, {})
+        shm_dict = cls._shared_memory[experiment]
+        if name in shm_dict:
+            shm = shm_dict[name]
         else:
+            size = np.prod(shape, dtype=int) * np.dtype(dtype).itemsize
+            logger.info(
+                "Allocating %.2f MB of shared memory for %s", size / 2**20, name
+            )
             shm = SharedMemory(
                 name=f"{name}-{id(experiment)}",
                 create=True,
-                size=np.prod(shape, dtype=int) * np.dtype(dtype).itemsize,
+                size=size,
             )
-            experiment._shared_memory[name] = shm
+            shm_dict[name] = shm
         return np.ndarray(shape, dtype=dtype, buffer=shm.buf)
 
     def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
@@ -156,8 +179,9 @@ class MzIrtDataFrame(Fixture):
         mzrt_shape = (nprecursors, 3 if experiment.config.model_ccs is not None else 2)
 
         mzrt = self.shared_array(experiment, "mzrt", shape=mzrt_shape, dtype=np.float32)
+        mzrt[:] = np.nan
         if experiment.config.cache_properties:
-            index = experiment.config.cache.value.get_index(IndexType.IRT, experiment)
+            index = experiment.cache[IndexType.IRT]
         else:
             index = None
         self.get_predictions(
@@ -192,9 +216,7 @@ class MzIrtDataFrame(Fixture):
 
         if experiment.config.model_ccs is not None:
             if experiment.config.cache_properties:
-                index = experiment.config.cache.value.get_index(
-                    IndexType.CCS, experiment
-                )
+                index = experiment.cache[IndexType.CCS]
             else:
                 index = None
             self.get_predictions(

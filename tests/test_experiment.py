@@ -1,10 +1,13 @@
 import unittest
 import numpy as np
+import multiprocessing as mp
 import pandas as pd
 import dataclasses
 from similarity.experiment import Experiment
 from similarity.grouping import GroupingWorker
 from similarity.utils.config import Config
+from similarity.utils.cache import CacheType
+from similarity.utils.spectrum_collection import SpectrumCollectionType
 from pathlib import Path
 import logging
 
@@ -60,41 +63,61 @@ class ExperimentTest(TestBase):
     def test_run(self):
         """Test that Experiment executes and returns something."""
         for workers in [1, 5]:
-            with self.subTest(workers=workers):
-                self.logger.info("Testing Experiment with %d workers", workers)
-                config = dataclasses.replace(self.config, workers=workers)
-                with Experiment(config) as exp:
-                    result = exp.score_df.sort_values(["score"])
-                    self.logger.debug("Final result:\n%s", result)
-                    self.assertEqual(
-                        result.shape[0], 9
-                    )  # Assuming 9 pairs based on the test input
-                    self.assertTrue(
-                        np.allclose(
-                            result["score"],
-                            sorted(
-                                [
-                                    0.847243,
-                                    0.816326,
-                                    0.724647,
-                                    0.912134,
-                                    0.772697,
-                                    0.81768,
-                                    0.974192,
-                                    0.858346,
-                                    0.933183,
-                                ]
-                            ),
-                            atol=1e-3,
+            for cache_type in CacheType:
+                for spectrum_collection_type in SpectrumCollectionType:
+                    with self.subTest(
+                        workers=workers,
+                        cache_type=cache_type,
+                        spectrum_collection_type=spectrum_collection_type,
+                    ):
+                        if (
+                            cache_type == CacheType.NONE
+                            and spectrum_collection_type
+                            == SpectrumCollectionType.CACHED
+                        ):
+                            self.logger.info(
+                                "Skipping combination of CacheType.NONE and SpectrumCollectionType.CACHED because it is not valid."
+                            )
+                            continue
+                        self.logger.info("Testing Experiment with %d workers", workers)
+                        config = dataclasses.replace(
+                            self.config,
+                            workers=workers,
+                            cache=cache_type,
+                            spectrum_collection=spectrum_collection_type,
                         )
-                    )
+                        with Experiment(config) as exp:
+                            result = exp.score_df.sort_values(["score"])
+                            self.logger.debug("Final result:\n%s", result)
+                            self.assertEqual(
+                                result.shape[0], 9
+                            )  # Assuming 9 pairs based on the test input
+                            self.assertTrue(
+                                np.allclose(
+                                    result["score"],
+                                    sorted(
+                                        [
+                                            0.847243,
+                                            0.816326,
+                                            0.724647,
+                                            0.912134,
+                                            0.772697,
+                                            0.81768,
+                                            0.974192,
+                                            0.858346,
+                                            0.933183,
+                                        ]
+                                    ),
+                                    atol=1e-3,
+                                )
+                            )
 
     def test_multiple_charges(self):
         config = dataclasses.replace(self.config, max_charge=3)
-        exp = Experiment(config)
-        self.assertEqual(exp.peptides["precursor_charges"].max(), 3)
-        self.assertEqual(exp.peptides.shape[0], 56)
-        self.assertEqual(exp.score_df.shape[0], 18)
+        with Experiment(config) as exp:
+            self.assertEqual(exp.peptides["precursor_charges"].max(), 3)
+            self.assertEqual(exp.peptides.shape[0], 56)
+            self.assertEqual(exp.score_df.shape[0], 18)
 
     def test_ptms(self):
         """Test that Experiment can handle peptides with PTMs."""
@@ -105,10 +128,10 @@ class ExperimentTest(TestBase):
             model_intensity="Prosit_2025_intensity_40PTM",
             fragmentation_type="HCD",
         )
-        exp = Experiment(config)
-        self.assertTrue(np.allclose(exp.peptides["irt"], [115.689156, 2.694990]))
-        self.assertTrue(np.allclose(exp.peptides["m/z"], [580.382344, 501.752743]))
-        self.assertEqual(exp.score_df.shape[0], 0)
+        with Experiment(config) as exp:
+            self.assertTrue(np.allclose(exp.peptides["irt"], [115.689156, 2.694990]))
+            self.assertTrue(np.allclose(exp.peptides["m/z"], [580.382344, 501.752743]))
+            self.assertEqual(exp.score_df.shape[0], 0)
 
 
 class EquivalenceTest(TestBase):
@@ -119,22 +142,15 @@ class EquivalenceTest(TestBase):
 
     def test_peak_matching(self):
         """Test that the peak matching logic correctly identifies matching peaks."""
-        exp = Experiment(self.config)
-        for i, indices in exp.pairs:
-            for j in indices:
+        with Experiment(self.config) as exp:
+            for i, j, score in exp.score_array:
                 with self.subTest(pair=(i, j)):
-                    pep1 = exp.peptides.loc[i, "peptide_sequences"]
-                    pep2 = exp.peptides.loc[j, "peptide_sequences"]
-                    charge1 = exp.peptides.loc[i, "precursor_charges"]
-                    charge2 = exp.peptides.loc[j, "precursor_charges"]
-                    mz1, intensities1 = exp.predicted_spectra[(pep1, charge1)]
-                    mz2, intensities2 = exp.predicted_spectra[(pep2, charge2)]
+                    mz1, intensities1 = exp.predicted_spectra[i]
+                    mz2, intensities2 = exp.predicted_spectra[j]
                     self.logger.debug(
-                        "Testing peak matching for peptides %d, %d: %s and %s",
+                        "Testing peak matching for peptides %d, %d",
                         i,
                         j,
-                        pep1,
-                        pep2,
                     )
                     self.logger.debug("m/z values for peptide 1: %s", mz1)
                     self.logger.debug("m/z values for peptide 2: %s", mz2)
@@ -213,24 +229,17 @@ class EquivalenceTest(TestBase):
 
     def test_similarity_score(self):
         """Test that the similarity score is calculated correctly."""
-        exp = Experiment(self.config)
-        spectra = exp.predicted_spectra
-        pairs = exp.pairs
-        for i, indices in pairs:
-            for j in indices:
+        with Experiment(self.config) as exp:
+            for i, j, score in exp.score_array:
                 with self.subTest(pair=(i, j)):
-                    pep1 = exp.peptides.loc[i, "peptide_sequences"]
-                    pep2 = exp.peptides.loc[j, "peptide_sequences"]
-                    charge1 = exp.peptides.loc[i, "precursor_charges"]
-                    charge2 = exp.peptides.loc[j, "precursor_charges"]
                     matcher = joinPeaks(
                         tolerance=self.config.peak_tolerance, ppm=self.config.peak_ppm
                     )
                     x_df = (
                         pd.DataFrame(
                             {
-                                "mz": spectra[(pep1, charge1)][0],
-                                "intensities": spectra[(pep1, charge1)][1],
+                                "mz": exp.predicted_spectra[i][0],
+                                "intensities": exp.predicted_spectra[i][1],
                             }
                         )
                         .sort_values(by="mz")
@@ -239,8 +248,8 @@ class EquivalenceTest(TestBase):
                     y_df = (
                         pd.DataFrame(
                             {
-                                "mz": spectra[(pep2, charge2)][0],
-                                "intensities": spectra[(pep2, charge2)][1],
+                                "mz": exp.predicted_spectra[j][0],
+                                "intensities": exp.predicted_spectra[j][1],
                             }
                         )
                         .sort_values(by="mz")
@@ -262,11 +271,7 @@ class EquivalenceTest(TestBase):
                         idx2,
                     )
                     self.logger.debug(
-                        "Testing similarity score for peptides %d, %d: %s and %s",
-                        i,
-                        j,
-                        pep1,
-                        pep2,
+                        "Testing similarity score for peptides %d, %d", i, j
                     )
                     self.logger.debug(
                         "Old score: %f, New score: %f", oldscore, newscore
@@ -275,4 +280,5 @@ class EquivalenceTest(TestBase):
 
 
 if __name__ == "__main__":
+    mp.set_start_method("forkserver")
     unittest.main()
