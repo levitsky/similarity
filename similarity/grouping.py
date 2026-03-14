@@ -59,12 +59,9 @@ class GroupingWorker(ExperimentWorker):
             return self.within_tolerance_3d
         return self.within_tolerance_2d
 
-    def kdtree(self, batch: int | None = None) -> cKDTree:
-        arr = self.mzrt
-        if batch is not None:
-            arr = arr[
-                batch * self.config.batch_size : (batch + 1) * self.config.batch_size
-            ]
+    def kdtree(self, batch: int) -> cKDTree:
+        bsize = self.config.batch_size
+        arr = self.mzrt[batch * bsize : (batch + 1) * bsize]
         return cKDTree(arr)
 
     @staticmethod
@@ -233,7 +230,7 @@ class SpectrumGrouping(Fixture):
             for batch in range(nb):
                 in_queue.put(batch)
 
-            for _ in range(experiment.config.workers):
+            for _ in workers:
                 in_queue.put(None)
 
             def produce_results():
@@ -243,7 +240,9 @@ class SpectrumGrouping(Fixture):
                     item = out_queue.get()
                     if item is None:
                         workers_done += 1
-                        logger.debug("%d workers done", workers_done)
+                        logger.debug(
+                            "%d of %d workers done", workers_done, len(workers)
+                        )
                     else:
                         i, matches, scores = item
                         count += 1
