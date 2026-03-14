@@ -112,24 +112,34 @@ class MzIrtDataFrame(Fixture):
                 experiment.config.koina_host,
             )
             masked = inputs.loc[mask]
-            result = model.predict(masked, df_output=False)
-            logger.debug(
-                "Predicted %d %s values:\n%s",
-                result[name].size,
+            bsize = experiment.config.batch_size
+            idx = np.where(mask)[0]
+            nbatches = (idx.shape[0] + bsize - 1) // bsize
+            logger.info(
+                "Predicting %s in %d batches of size %d...",
                 name,
-                result[name][:10],
+                nbatches,
+                bsize,
             )
-            if index is not None:
-                index.save_predictions(masked, result)  # type: ignore
-                index.finalize()
+            for i in range(nbatches):
+                logger.debug("Predicting %s batch %d of %d ...", name, i + 1, nbatches)
+                batch_idx = idx[i * bsize : (i + 1) * bsize]
+                batch_masked = masked.loc[batch_idx]
+                result = model.predict(
+                    batch_masked, df_output=False, disable_progress_bar=True
+                )
+                output[batch_idx] = result[name].reshape(-1)
+                if index is not None:
+                    index.save_predictions(masked, result)  # type: ignore
 
-            output[mask] = result[name].reshape(-1)
+            if index is not None:
+                index.finalize()
 
             if np.isnan(output).any():
                 logger.error(
-                    "Some %s values are still missing after prediction, these will be skipped: %s",
+                    "Some %s values are still missing after prediction. Output:\n%s",
                     name,
-                    inputs.loc[np.isnan(inputs[name]), "peptide_sequences"].tolist(),
+                    output,
                 )
         else:
             logger.info("All %s values are cached, skipping prediction", name)
