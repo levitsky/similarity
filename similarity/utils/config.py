@@ -63,7 +63,7 @@ class Config(BaseConfig):
     nonstandard_aminoacids: bool = False
     ptms: bool = False
     koina_host: str = "koina.wilhelmlab.org:443"
-    cache: CacheType = CacheType.DISKCACHE
+    cache: CacheType = CacheType.NONE
     cache_dir: Path = Path(".")
     cache_properties: bool = False
     workers: int = mp.cpu_count()
