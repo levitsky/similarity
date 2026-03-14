@@ -17,6 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 class PredictedSpectrumCollection(Fixture):
+    @staticmethod
+    def preprocess_predictions(
+        result: dict[str, list["np.ndarray"]],
+    ) -> dict[str, list["np.ndarray"]]:
+        for arr in result["intensities"]:
+            np.sqrt(arr, out=arr, where=arr > 0)
+        return result
+
     def evaluate(self, experiment: "Experiment") -> "SpectrumCollection":
         df = experiment.peptides
         index = experiment.cache[IndexType.INTENSITY]
@@ -30,10 +38,12 @@ class PredictedSpectrumCollection(Fixture):
         prediction_inputs = df.loc[~cached]
         model = Koina(experiment.config.model_intensity, experiment.config.koina_host)
 
-        result = model.predict(prediction_inputs, df_output=False)
-        collection.fill_from_predictions(prediction_inputs, result)  # type: ignore
+        result: dict[str, list["np.ndarray"]] = model.predict(prediction_inputs, df_output=False)  # type: ignore
+        result = self.preprocess_predictions(result)
+
+        collection.fill_from_predictions(prediction_inputs, result)
         if index is not None:
-            index.save_predictions(prediction_inputs, result)  # type: ignore
+            index.save_predictions(prediction_inputs, result)
             index.finalize()
         assert collection.is_ready()
         return collection

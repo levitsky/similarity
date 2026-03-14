@@ -82,13 +82,13 @@ class GroupingWorker(ExperimentWorker):
         idx1: np.ndarray,
         idx2: np.ndarray,
     ) -> float:
-        wx = np.sqrt(intensities1[idx1])
-        wy = np.sqrt(intensities2[idx2])
+        wx = intensities1[idx1]  # sqrt was applied in preprocess_predictions
+        wy = intensities2[idx2]
         # the numerator only has matching peaks intensities,
         # but the denominator has the sum of all intensities
         num = np.sum(wx * wy) ** 2
-        denom1 = np.sum(intensities1)
-        denom2 = np.sum(intensities2)
+        denom1 = np.sum(intensities1**2)
+        denom2 = np.sum(intensities2**2)
 
         ndotproduct = num / denom1 / denom2
         score = 1 - 2 * np.arccos(ndotproduct) / np.pi

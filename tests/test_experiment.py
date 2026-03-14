@@ -256,7 +256,7 @@ class EquivalenceTest(TestBase):
                         .reset_index(drop=True)
                     )
                     x_matched, y_matched = matcher.match(x_df, y_df)
-                    oldscore = nspectraangle(x_matched, y_matched, m=0, n=0.5)
+                    oldscore = nspectraangle(x_matched, y_matched, m=0, n=1)
 
                     idx1, idx2 = GroupingWorker.match_peaks(
                         x_df["mz"].values,
