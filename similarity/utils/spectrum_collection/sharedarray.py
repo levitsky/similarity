@@ -70,7 +70,7 @@ class SharedArraySpectrumCollection(SpectrumCollection):
 
     def fill_from_cache(self, experiment: "Experiment", index: "Index") -> None:
         maxpeaks = experiment.config.max_peaks
-        for i, (pep, charge) in experiment.peptides[
+        for i, pep, charge in experiment.peptides[
             ["peptide_sequences", "precursor_charges"]
         ].itertuples():
             key = (pep, charge)

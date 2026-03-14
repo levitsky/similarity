@@ -21,7 +21,8 @@ class PredictedSpectrumCollection(Fixture):
         df = experiment.peptides
         index = experiment.cache[IndexType.INTENSITY]
         collection = experiment.config.spectrum_collection.value(experiment)
-
+        if index is not None:
+            collection.fill_from_cache(experiment, index)
         cached = collection.spectra_available
         if cached.all():
             logger.info("All spectra are cached, skipping prediction")
