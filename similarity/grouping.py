@@ -144,7 +144,7 @@ class GroupingWorker(ExperimentWorker):
                         matches.append(i)
                         scores.append(score)
             if matches:
-                yield self.encode_result(j, matches, scores)
+                yield j, matches, scores
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -173,7 +173,7 @@ class GroupingWorker(ExperimentWorker):
                 )
                 break
             for result in self.process_batch(batch):
-                self.result_queue.put(result)
+                self.result_queue.put(self.encode_result(*result))
             logger.debug(
                 "Finished batch %d of %d in worker %d. Current output queue size: %d",
                 batch + 1,
@@ -216,12 +216,17 @@ class SpectrumGrouping(Fixture):
     def nbatches(self, experiment: "Experiment") -> int:
         return math.ceil(len(experiment.peptides) / experiment.config.batch_size)
 
-    def evaluate(self, experiment: "Experiment") -> np.ndarray:
+    def evaluate(
+        self, experiment: "Experiment"
+    ) -> tuple[list[np.ndarray | list], list[np.ndarray | list]]:
         tree = self.kdtree(experiment)
         logger.info("Built cKDTree with %d nodes from %d points", tree.size, tree.n)
         nb = self.nbatches(experiment)
         logger.info("Processing %d spectra in %d batches...", tree.n, nb)
-        dtype = np.dtype([("i", np.int32), ("j", np.int32), ("score", np.float32)])
+
+        matches: list[np.ndarray | list] = [[] for _ in range(len(experiment.peptides))]
+        scores: list[np.ndarray | list] = [[] for _ in matches]
+
         if experiment.config.workers > 1:
             logger.info(
                 "Grouping with %d workers...",
@@ -256,25 +261,21 @@ class SpectrumGrouping(Fixture):
             for _ in workers:
                 in_queue.put(None)
 
-            def produce_results():
-                workers_done = 0
-                count = 0
-                while workers_done < len(workers):
-                    item = out_queue.get()
-                    if item is None:
-                        workers_done += 1
-                        logger.debug(
-                            "%d of %d workers done", workers_done, len(workers)
-                        )
-                    else:
-                        i, matches, scores = GroupingWorker.decode_result(item)
-                        count += 1
-                        for m, s in zip(matches, scores):
-                            yield (i, m, s)
-                        if count % experiment.config.batch_size == 0:
-                            logger.debug("Processed %d peptides...", count)
+            workers_done = 0
+            count = 0
+            while workers_done < len(workers):
+                item = out_queue.get()
+                if item is None:
+                    workers_done += 1
+                    logger.debug("%d of %d workers done", workers_done, len(workers))
+                else:
+                    i, b_matches, b_scores = GroupingWorker.decode_result(item)
+                    count += 1
+                    matches[i] = b_matches
+                    scores[i] = b_scores
+                    if count % experiment.config.batch_size == 0:
+                        logger.debug("Processed %d peptides...", count)
 
-            scores = np.fromiter(produce_results(), dtype=dtype)
             for worker in workers:
                 worker.join()
         else:
@@ -299,17 +300,17 @@ class SpectrumGrouping(Fixture):
             pseudoworker.peptides = experiment.peptides["peptide_sequences"].values
             pseudoworker.charges = experiment.peptides["precursor_charges"].values
 
-            def produce_results():
-                for batch in range(nb):
-                    for item in pseudoworker.process_batch(batch):
-                        i, matches, scores = GroupingWorker.decode_result(item)
-                        for m, s in zip(matches, scores):
-                            yield (i, m, s)
+            for batch in range(nb):
+                for item in pseudoworker.process_batch(batch):
+                    i, b_matches, b_scores = item
+                    matches[i] = b_matches
+                    scores[i] = b_scores
 
-            scores = np.fromiter(produce_results(), dtype=dtype)
+        total_pairs = sum(len(m) for m in matches if m is not None)
+
         logger.info(
             "Finished scoring, found %d pairs with score above %f",
-            len(scores),
+            total_pairs,
             experiment.config.score_threshold,
         )
-        return scores
+        return matches, scores

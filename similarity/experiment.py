@@ -3,7 +3,7 @@ from .utils.config import Config
 from .utils.cache import IndexType
 from .prediction import PredictedSpectrumCollection, MzIrtDataFrame
 from .grouping import SpectrumGrouping
-from .output import ScoresDataFrame
+from .output import ScoresDataFrame, ScoreArray
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -19,12 +19,14 @@ class Experiment:
     if TYPE_CHECKING:
         peptides: "pd.DataFrame"
         predicted_spectra: "SpectrumCollection"
+        groups: tuple[list[np.ndarray | list], list[np.ndarray | list]]
         score_array: "np.ndarray"
         score_df: "pd.DataFrame"
     else:
         peptides = MzIrtDataFrame()
         predicted_spectra = PredictedSpectrumCollection()
-        score_array = SpectrumGrouping()
+        groups = SpectrumGrouping()
+        score_array = ScoreArray()
         score_df = ScoresDataFrame()
 
     def __init__(self, config: Config):
