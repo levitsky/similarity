@@ -77,6 +77,8 @@ class SharedArraySpectrumCollection(SpectrumCollection):
             ].itertuples(),
             total=len(experiment.peptides),
             desc=f"Loading spectra from cache",
+            unit="spectra",
+            unit_scale=True,
         ):
             key = (pep, charge)
             mz, intensities = index.get(key, (None, None))
