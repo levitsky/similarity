@@ -158,6 +158,8 @@ class Index(diskcache.Index, BaseIndex, ABC):
             enumerate(inputs.iterrows()),
             total=len(inputs),
             desc=f"Loading {self.name} from cache",
+            unit="peptides",
+            unit_scale=True,
         ):
             key = self._key_from_row(row)
             value = self.get(key, np.nan)
