@@ -298,6 +298,12 @@ class MzIrtDataFrame(Fixture):
                 peptide = peptide.decode("ascii")
                 mzrt[i, 0] = cmass.fast_mass(peptide, charge=charge)
 
+        # sort by m/z for better perforamce
+        logger.debug("Sorting peptides by m/z for better performance")
+        idx = np.argsort(mzrt[:, 0])
+        for arr in [seq_array, charge_array, mzrt]:
+            arr[:] = arr[idx]
+
         df = pd.DataFrame(peptide_data, copy=False)
         # the rest of the columns are not in shared memory
         df["collision_energies"] = experiment.config.collision_energy
