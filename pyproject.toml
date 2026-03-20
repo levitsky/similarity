@@ -37,6 +37,7 @@ dependencies = [
 
 [project.scripts]
 run = "similarity.cli:experiment"
+time_scoring = "similarity.cli:time_scoring"
 
 [tool.setuptools]
 packages = ["similarity"]
