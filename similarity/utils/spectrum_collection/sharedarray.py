@@ -3,6 +3,7 @@ import logging
 import numpy as np
 from pandas import DataFrame
 from multiprocessing.shared_memory import SharedMemory
+from tqdm import tqdm
 from ..abc import SpectrumCollection
 
 if TYPE_CHECKING:
@@ -70,9 +71,15 @@ class SharedArraySpectrumCollection(SpectrumCollection):
 
     def fill_from_cache(self, experiment: "Experiment", index: "Index") -> None:
         maxpeaks = experiment.config.max_peaks
-        for i, pep, charge in experiment.peptides[
-            ["peptide_sequences", "precursor_charges"]
-        ].itertuples():
+        for i, pep, charge in tqdm(
+            experiment.peptides[
+                ["peptide_sequences", "precursor_charges"]
+            ].itertuples(),
+            total=len(experiment.peptides),
+            desc=f"Loading spectra from cache",
+            unit="spectra",
+            unit_scale=True,
+        ):
             key = (pep, charge)
             mz, intensities = index.get(key, (None, None))
             if mz is not None and intensities is not None:
@@ -88,16 +95,16 @@ class SharedArraySpectrumCollection(SpectrumCollection):
         self, inputs: DataFrame, predictions: dict[str, list["np.ndarray"]]
     ) -> None:
         maxpeaks = self.experiment.config.max_peaks
-        for i in range(len(inputs)):
-            mz = predictions["mz"][i]
-            intensities = predictions["intensities"][i]
+        for iloc, loc in enumerate(inputs.index):
+            mz = predictions["mz"][iloc]
+            intensities = predictions["intensities"][iloc]
             len_spectrum = min(len(mz), maxpeaks)
             if len_spectrum < len(mz):
                 idx = np.argsort(intensities)[-maxpeaks:]
                 mz = mz[idx]
                 intensities = intensities[idx]
-            self.array[i, 0, :len_spectrum] = mz
-            self.array[i, 1, :len_spectrum] = intensities
+            self.array[loc, 0, :len_spectrum] = mz
+            self.array[loc, 1, :len_spectrum] = intensities
 
     @property
     def spectra_available(self) -> "NDArray[np.bool_]":

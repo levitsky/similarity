@@ -18,6 +18,7 @@ class CachedSpectrumCollection(SpectrumCollection):
     """A SpectrumCollection that caches predictions to disk using a configurable cache backend."""
 
     index: "Index"
+    batch_factor: int = 10
 
     def __init__(self, experiment: "Experiment"):
         super().__init__(experiment)
@@ -52,10 +53,22 @@ class CachedSpectrumCollection(SpectrumCollection):
     @property
     def spectra_available(self) -> "NDArray[np.bool_]":
         available = np.zeros(len(self.experiment.peptides), dtype=np.bool_)
+        if len(self.index) < available.size / 2:
+            logger.info(
+                "Cache size too small, skipping cache loading for spectra",
+            )
+            return available
+        bsize = self.experiment.config.batch_size * self.batch_factor
         for i in range(len(available)):
             available[i] = self._index_key(i) in self.index
+            if i % bsize == 0:
+                logger.info(
+                    "Checked cache availability for %d of %d spectra",
+                    i,
+                    available.size,
+                )
         logger.info(
-            "%d of %d spectra are available in cache", available.sum(), len(available)
+            "%d of %d spectra are available in cache", available.sum(), available.size
         )
         return available
 

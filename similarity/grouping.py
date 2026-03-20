@@ -2,7 +2,6 @@ import math
 from typing import Iterable, TYPE_CHECKING, Any
 from scipy.spatial import cKDTree
 import numpy as np
-import os
 import logging
 import multiprocessing as mp
 from .utils.abc import Fixture
@@ -82,13 +81,13 @@ class GroupingWorker(ExperimentWorker):
         idx1: np.ndarray,
         idx2: np.ndarray,
     ) -> float:
-        wx = np.sqrt(intensities1[idx1])
-        wy = np.sqrt(intensities2[idx2])
+        wx = intensities1[idx1]  # sqrt was applied in preprocess_predictions
+        wy = intensities2[idx2]
         # the numerator only has matching peaks intensities,
         # but the denominator has the sum of all intensities
         num = np.sum(wx * wy) ** 2
-        denom1 = np.sum(intensities1)
-        denom2 = np.sum(intensities2)
+        denom1 = np.sum(intensities1**2)
+        denom2 = np.sum(intensities2**2)
 
         ndotproduct = num / denom1 / denom2
         score = 1 - 2 * np.arccos(ndotproduct) / np.pi
@@ -106,6 +105,21 @@ class GroupingWorker(ExperimentWorker):
         )
         return GroupingWorker.similarity_score(intensities1, intensities2, idx1, idx2)
 
+    @staticmethod
+    def encode_result(i: int, matches: list[int], scores: list[float]) -> tuple:
+        return (
+            i,
+            np.array(matches, dtype=np.int32).tobytes(),
+            np.array(scores, dtype=np.float32).tobytes(),
+        )
+
+    @staticmethod
+    def decode_result(encoded: tuple) -> tuple[int, np.ndarray, np.ndarray]:
+        i, matches_bytes, scores_bytes = encoded
+        matches = np.frombuffer(matches_bytes, dtype=np.int32)
+        scores = np.frombuffer(scores_bytes, dtype=np.float32)
+        return i, matches, scores
+
     def process_batch(
         self,
         batch: int,
@@ -115,7 +129,7 @@ class GroupingWorker(ExperimentWorker):
         subtree = self.kdtree(batch)
 
         offset = batch * self.config.batch_size
-        logger.debug("Batch idx %d, offset %d, PID %d", batch, offset, os.getpid())
+        logger.debug("Batch idx %d, offset %d, PID %d", batch, offset, self.pid)
 
         neighbors = subtree.query_ball_tree(self.tree, r=self.radius)
 
@@ -130,14 +144,14 @@ class GroupingWorker(ExperimentWorker):
                         matches.append(i)
                         scores.append(score)
             if matches:
-                yield (j, matches, scores)
+                yield self.encode_result(j, matches, scores)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.within_tolerance = self.tolerance_check()
 
     def run(self) -> None:
-        logger.debug("Worker started with PID %d", os.getpid())
+        logger.debug("Worker started with PID %d", self.pid)
         self.mzrt = np.ndarray(
             shape=self.shape, dtype=np.float32, buffer=self.shared_memory["mzrt"].buf
         )
@@ -155,19 +169,28 @@ class GroupingWorker(ExperimentWorker):
             batch = self.task_queue.get()
             if batch is None:
                 logger.debug(
-                    "Worker with PID %d received None, wrapping up...", os.getpid()
+                    "Worker with PID %d received None, wrapping up...", self.pid
                 )
                 break
             for result in self.process_batch(batch):
                 self.result_queue.put(result)
+            logger.debug(
+                "Finished batch %d of %d in worker %d. Current output queue size: %d",
+                batch + 1,
+                self.nbatches,
+                self.pid,
+                self.result_queue.qsize(),
+            )
         self.result_queue.put(None)
         for shm in self.shared_memory.values():
             shm.close()
         self.spectra.worker_close()
-        logger.debug("Worker with PID %d finished", os.getpid())
+        logger.debug("Worker with PID %d finished", self.pid)
 
 
 class SpectrumGrouping(Fixture):
+    max_queue_size: int = 100000
+
     def kdtree(self, experiment: "Experiment", batch: int | None = None) -> cKDTree:
         df = experiment.peptides
         names = ["m/z", "irt"]
@@ -204,8 +227,8 @@ class SpectrumGrouping(Fixture):
                 "Grouping with %d workers...",
                 experiment.config.workers,
             )
-            in_queue = mp.Queue()
-            out_queue = mp.Queue()
+            in_queue = mp.Queue(maxsize=self.max_queue_size)
+            out_queue = mp.Queue(maxsize=self.max_queue_size)
             workers = [
                 GroupingWorker(
                     in_queue,
@@ -244,7 +267,7 @@ class SpectrumGrouping(Fixture):
                             "%d of %d workers done", workers_done, len(workers)
                         )
                     else:
-                        i, matches, scores = item
+                        i, matches, scores = GroupingWorker.decode_result(item)
                         count += 1
                         for m, s in zip(matches, scores):
                             yield (i, m, s)
@@ -279,9 +302,14 @@ class SpectrumGrouping(Fixture):
             def produce_results():
                 for batch in range(nb):
                     for item in pseudoworker.process_batch(batch):
-                        i, matches, scores = item
+                        i, matches, scores = GroupingWorker.decode_result(item)
                         for m, s in zip(matches, scores):
                             yield (i, m, s)
 
             scores = np.fromiter(produce_results(), dtype=dtype)
+        logger.info(
+            "Finished scoring, found %d pairs with score above %f",
+            len(scores),
+            experiment.config.score_threshold,
+        )
         return scores

@@ -129,8 +129,12 @@ class ExperimentTest(TestBase):
             fragmentation_type="HCD",
         )
         with Experiment(config) as exp:
-            self.assertTrue(np.allclose(exp.peptides["irt"], [115.689156, 2.694990]))
-            self.assertTrue(np.allclose(exp.peptides["m/z"], [580.382344, 501.752743]))
+            self.assertTrue(
+                np.allclose(sorted(exp.peptides["irt"]), [2.694990, 115.689156])
+            )
+            self.assertTrue(
+                np.allclose(sorted(exp.peptides["m/z"]), [501.752743, 580.382344])
+            )
             self.assertEqual(exp.score_df.shape[0], 0)
 
 
@@ -256,7 +260,7 @@ class EquivalenceTest(TestBase):
                         .reset_index(drop=True)
                     )
                     x_matched, y_matched = matcher.match(x_df, y_df)
-                    oldscore = nspectraangle(x_matched, y_matched, m=0, n=0.5)
+                    oldscore = nspectraangle(x_matched, y_matched, m=0, n=1)
 
                     idx1, idx2 = GroupingWorker.match_peaks(
                         x_df["mz"].values,

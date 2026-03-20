@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING, Iterable
 import logging
 import numpy as np
+from tqdm import tqdm
 from ..abc import Index as BaseIndex, IndexType
 
 if TYPE_CHECKING:
@@ -63,6 +64,9 @@ class Index(diskcache.Index, BaseIndex, ABC):
     def __getitem__(self, key: Any) -> Any:
         full_key = self._full_key(key)
         return super().__getitem__(full_key)
+
+    def __len__(self) -> int:
+        return len(self._cache)
 
     def get(self, key: Any, default: Any = None) -> Any:
         try:
@@ -150,7 +154,13 @@ class Index(diskcache.Index, BaseIndex, ABC):
                 "Cache size too small, skipping cache loading for %s", self.name
             )
             return
-        for i, (_, row) in enumerate(inputs.iterrows()):
+        for i, (_, row) in tqdm(
+            enumerate(inputs.iterrows()),
+            total=len(inputs),
+            desc=f"Loading {self.name} from cache",
+            unit="peptides",
+            unit_scale=True,
+        ):
             key = self._key_from_row(row)
             value = self.get(key, np.nan)
             output[i] = value

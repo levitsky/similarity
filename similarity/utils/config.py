@@ -63,11 +63,11 @@ class Config(BaseConfig):
     nonstandard_aminoacids: bool = False
     ptms: bool = False
     koina_host: str = "koina.wilhelmlab.org:443"
-    cache: CacheType = CacheType.DISKCACHE
+    cache: CacheType = CacheType.NONE
     cache_dir: Path = Path(".")
     cache_properties: bool = False
     workers: int = mp.cpu_count()
-    batch_size: int = 5000
+    batch_size: int = 1000
     score_threshold: float = 0.0
     spectrum_collection: SpectrumCollectionType = SpectrumCollectionType.SHAREDARRAY
     max_peaks: int = 50

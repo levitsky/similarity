@@ -39,7 +39,8 @@ class Experiment:
 
     def __cleanup(self):
         MzIrtDataFrame.close(self)
-        self.predicted_spectra.close()
+        if PredictedSpectrumCollection.exists(self):
+            self.predicted_spectra.close()
         while self.cache:
             _, index = self.cache.popitem()
             if index is not None:

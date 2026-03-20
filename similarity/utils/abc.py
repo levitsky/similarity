@@ -21,9 +21,9 @@ class Fixture(ABC):
     def evaluate(self, experiment: "Experiment") -> Any:
         pass
 
-    def __init__(self):
-        super().__init__()
-        self._data = {}
+    def __init_subclass__(cls) -> None:
+        cls._data = {}
+        super().__init_subclass__()
 
     def __get__(self, obj, objtype=None):
         if obj not in self._data:
@@ -39,6 +39,10 @@ class Fixture(ABC):
 
     def __set__(self, obj, value):
         raise AttributeError(f"Cannot set value of fixture {self.__class__.__name__}")
+
+    @classmethod
+    def exists(cls, obj) -> bool:
+        return obj in cls._data
 
 
 class IndexType(Enum):
@@ -63,6 +67,10 @@ class Index(ABC):
 
     @abstractmethod
     def __contains__(self, key: Any) -> bool:
+        pass
+
+    @abstractmethod
+    def __len__(self) -> int:
         pass
 
     @abstractmethod

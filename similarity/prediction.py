@@ -6,6 +6,8 @@ from koinapy import Koina
 from .utils.abc import Fixture, IndexType
 from pyteomics import cmass, auxiliary as aux, proforma, parser
 import logging
+from tqdm import trange
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 if TYPE_CHECKING:
     import numpy as np
@@ -17,8 +19,17 @@ logger = logging.getLogger(__name__)
 
 
 class PredictedSpectrumCollection(Fixture):
+    batch_factor: int = 5
+
+    @staticmethod
+    def preprocess_predictions(
+        result: dict[str, list["np.ndarray"]],
+    ) -> dict[str, list["np.ndarray"]]:
+        for arr in result["intensities"]:
+            np.sqrt(arr, out=arr, where=arr > 0)
+        return result
+
     def evaluate(self, experiment: "Experiment") -> "SpectrumCollection":
-        df = experiment.peptides
         index = experiment.cache[IndexType.INTENSITY]
         collection = experiment.config.spectrum_collection.value(experiment)
         if index is not None:
@@ -27,13 +38,31 @@ class PredictedSpectrumCollection(Fixture):
         if cached.all():
             logger.info("All spectra are cached, skipping prediction")
             return collection
-        prediction_inputs = df.loc[~cached]
+        prediction_inputs = experiment.peptides.loc[~cached]
         model = Koina(experiment.config.model_intensity, experiment.config.koina_host)
 
-        result = model.predict(prediction_inputs, df_output=False)
-        collection.fill_from_predictions(prediction_inputs, result)  # type: ignore
+        bsize = experiment.config.batch_size * self.batch_factor
+        nbatches = (prediction_inputs.shape[0] + bsize - 1) // bsize
+        logger.info(
+            "Predicting spectra for %d peptides in %d batches of size %d...",
+            prediction_inputs.shape[0],
+            nbatches,
+            bsize,
+        )
+        with logging_redirect_tqdm():
+            for i in trange(
+                nbatches, desc=experiment.config.model_intensity, unit="batch"
+            ):
+                logger.debug("Predicting batch %d of %d ...", i + 1, nbatches)
+                batch_inputs = prediction_inputs.iloc[i * bsize : (i + 1) * bsize]
+                result: dict[str, list["np.ndarray"]] = model.predict(batch_inputs, df_output=False, mode="async", disable_progress_bar=True)  # type: ignore
+                result = self.preprocess_predictions(result)
+
+                collection.fill_from_predictions(batch_inputs, result)
+                if index is not None:
+                    index.save_predictions(batch_inputs, result)
+
         if index is not None:
-            index.save_predictions(prediction_inputs, result)  # type: ignore
             index.finalize()
         assert collection.is_ready()
         return collection
@@ -41,6 +70,7 @@ class PredictedSpectrumCollection(Fixture):
 
 class MzIrtDataFrame(Fixture):
     _shared_memory: dict["Experiment", dict[str, SharedMemory]] = {}
+    batch_factor: int = 5
 
     @classmethod
     def close(cls, experiment: "Experiment"):
@@ -90,25 +120,41 @@ class MzIrtDataFrame(Fixture):
                 experiment.config.koina_host,
             )
             masked = inputs.loc[mask]
-            result = model.predict(masked, df_output=False)
-            logger.debug(
-                "Predicted %d %s values:\n%s",
-                result[name].size,
+            bsize = experiment.config.batch_size * self.batch_factor
+            idx = np.where(mask)[0]
+            nbatches = (idx.shape[0] + bsize - 1) // bsize
+            logger.info(
+                "Predicting %s in %d batches of size %d...",
                 name,
-                result[name][:10],
+                nbatches,
+                bsize,
             )
-            if index is not None:
-                index.save_predictions(masked, result)  # type: ignore
-                index.finalize()
-
-            output[mask] = result[name].reshape(-1)
+            with logging_redirect_tqdm():
+                for i in trange(
+                    nbatches,
+                    desc=f"{getattr(experiment.config, f'model_{name}')}",
+                    unit="batch",
+                ):
+                    batch_idx = idx[i * bsize : (i + 1) * bsize]
+                    batch_masked = masked.loc[batch_idx]
+                    result = model.predict(
+                        batch_masked,
+                        df_output=False,
+                        mode="async",
+                        disable_progress_bar=True,
+                    )
+                    output[batch_idx] = result[name].reshape(-1)
+                    if index is not None:
+                        index.save_predictions(batch_masked, result)  # type: ignore
 
             if np.isnan(output).any():
                 logger.error(
-                    "Some %s values are still missing after prediction, these will be skipped: %s",
+                    "Some %s values are still missing after prediction. Output:\n%s",
                     name,
-                    inputs.loc[np.isnan(inputs[name]), "peptide_sequences"].tolist(),
+                    output,
                 )
+            if index is not None:
+                index.finalize()
         else:
             logger.info("All %s values are cached, skipping prediction", name)
 
@@ -251,6 +297,12 @@ class MzIrtDataFrame(Fixture):
             ):
                 peptide = peptide.decode("ascii")
                 mzrt[i, 0] = cmass.fast_mass(peptide, charge=charge)
+
+        # sort by m/z for better perforamce
+        logger.debug("Sorting peptides by m/z for better performance")
+        idx = np.argsort(mzrt[:, 0])
+        for arr in [seq_array, charge_array, mzrt]:
+            arr[:] = arr[idx]
 
         df = pd.DataFrame(peptide_data, copy=False)
         # the rest of the columns are not in shared memory
