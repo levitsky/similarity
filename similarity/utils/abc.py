@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import logging
+from datetime import datetime
 from typing import Any, TYPE_CHECKING
 from enum import Enum
 
@@ -27,13 +28,22 @@ class Fixture(ABC):
 
     def __get__(self, obj, objtype=None):
         if obj not in self._data:
-            logger.debug("%s not in cache on %s, evaluating...", obj, self)
-            self._data[obj] = self.evaluate(obj)
             logger.info(
-                "Finished evaluating %s for %s %d",
+                "Started evaluating %s for %s %d",
                 self.__class__.__name__,
                 obj.__class__.__name__,
                 id(obj),
+            )
+            start_time = datetime.now()
+            self._data[obj] = self.evaluate(obj)
+            end_time = datetime.now()
+
+            logger.info(
+                "Finished evaluating %s for %s %d in %s",
+                self.__class__.__name__,
+                obj.__class__.__name__,
+                id(obj),
+                end_time - start_time,
             )
         return self._data[obj]
 
