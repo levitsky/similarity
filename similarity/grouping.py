@@ -30,6 +30,7 @@ class GroupingWorker(ExperimentWorker):
     spectra: "SpectrumCollection"
     peptides: np.ndarray
     charges: np.ndarray
+    batch_size: int
 
     def within_tolerance_2d(self, i: int, j: int) -> bool:
         arr = self.mzrt
@@ -57,7 +58,7 @@ class GroupingWorker(ExperimentWorker):
         return self.within_tolerance_2d
 
     def kdtree(self, offset: int) -> cKDTree:
-        bsize = self.config.batch_size
+        bsize = self.batch_size
         arr = self.mzrt[offset : offset + bsize]
         return cKDTree(arr)
 
@@ -127,7 +128,7 @@ class GroupingWorker(ExperimentWorker):
         logger.info(
             "Processing peptides %d to %d...",
             offset + 1,
-            offset + self.config.batch_size,
+            offset + self.batch_size,
         )
         subtree = self.kdtree(offset)
 
@@ -209,13 +210,14 @@ class SpectrumGrouping(Fixture):
             return np.sqrt(mz_tol**2 + irt_tol**2 + ccs_tol**2)
         return np.sqrt(mz_tol**2 + irt_tol**2)
 
-    def batch_offsets(self, experiment: "Experiment") -> list[int]:
+    def batch_offsets(
+        self, bsize: int, experiment: "Experiment"
+    ) -> tuple[int, list[int]]:
         """
         Returns the offsets for each batch. Given the batch size, partition the "mzrt" array that is sorted by m/z
         so that batches overlap by the configured m/z tolerance. This ensures that all spectra that could potentially
         be within tolerance of each other are processed in the same batch.
         """
-        bsize = experiment.config.batch_size
         mz_tol = experiment.config.mz_tolerance
         mz = experiment.peptides["m/z"].values
         offsets = [0]
@@ -226,18 +228,20 @@ class SpectrumGrouping(Fixture):
             while mz[end_of_batch] - mz[next_offset - 1] <= mz_tol:
                 next_offset -= 1
             if next_offset <= offsets[-1]:
-                raise RuntimeError(
+                logger.warning(
                     "Batch size is too small to accommodate the m/z tolerance. "
-                    f"Consider increasing the batch size above {bsize}."
+                    "Doubling the batch size to %d...",
+                    bsize * 2,
                 )
+                return self.batch_offsets(bsize * 2, experiment)
+                next_offset = offsets[-1] + bsize
             offsets.append(next_offset)
         logger.debug("Calculated batch offsets: %s", offsets[:10])
-        return offsets
+        return bsize, offsets
 
     def evaluate(self, experiment: "Experiment") -> np.ndarray:
-        offsets = self.batch_offsets(experiment)
+        bsize, offsets = self.batch_offsets(experiment.config.batch_size, experiment)
         nb = len(offsets)
-        bsize = experiment.config.batch_size
         logger.info(
             "Processing %d spectra in %d batches...", len(experiment.peptides), nb
         )
@@ -254,6 +258,7 @@ class SpectrumGrouping(Fixture):
                     in_queue,
                     out_queue,
                     config=experiment.config,
+                    batch_size=bsize,
                     shared_memory=MzIrtDataFrame._shared_memory[experiment],
                     shape=(
                         len(experiment.peptides),
@@ -289,7 +294,7 @@ class SpectrumGrouping(Fixture):
                         count += 1
                         for m, s in zip(matches, scores):
                             yield (i, m, s)
-                        if count % experiment.config.batch_size == 0:
+                        if count % bsize == 0:
                             logger.debug("Processed %d peptides...", count)
 
             scores = np.fromiter(produce_results(), dtype=dtype)
@@ -300,6 +305,7 @@ class SpectrumGrouping(Fixture):
                 None,
                 None,
                 config=experiment.config,
+                batch_size=bsize,
                 spectra=experiment.predicted_spectra,
                 radius=self.radius(experiment),
             )
