@@ -82,7 +82,7 @@ def experiment() -> None:
 
 def time_scoring() -> None:
     p = get_argparser(Config)
-    args = p.parse_args()
+
     p.add_argument(
         "-a",
         "--array-file",
@@ -90,6 +90,7 @@ def time_scoring() -> None:
         type=Path,
         help="Path to output .npy file with raw score arrays",
     )
+    args = p.parse_args()
     logger = setup_logging(args)
     kw = vars(args).copy()
     kw.pop("verbose", None)
