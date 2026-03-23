@@ -91,6 +91,13 @@ def time_scoring() -> None:
         help="Path to output .npy file with raw score arrays",
     )
     args = p.parse_args()
+    p.add_argument(
+        "-a",
+        "--array-file",
+        nargs="?",
+        type=Path,
+        help="Path to output .npy file with raw score arrays",
+    )
     logger = setup_logging(args)
     kw = vars(args).copy()
     for key in ["verbose", "array_file", "log_file"]:
