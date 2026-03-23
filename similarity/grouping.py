@@ -218,22 +218,30 @@ class SpectrumGrouping(Fixture):
         so that batches overlap by the configured m/z tolerance. This ensures that all spectra that could potentially
         be within tolerance of each other are processed in the same batch.
         """
-        mz_tol = experiment.config.mz_tolerance
-        mz = experiment.peptides["m/z"].values
+        c = experiment.config
+        i, dim = MzIrtDataFrame.sorting_dimension(experiment.peptides, c)
+        if i == 0:
+            tol = c.mz_tolerance
+        elif i == 1:
+            tol = c.irt_tolerance
+        else:
+            tol = c.ccs_rtolerance * experiment.peptides["ccs"].max()
+        values = experiment.peptides[dim].values
         offsets = [0]
-        while offsets[-1] < len(mz):
+        while offsets[-1] < len(values):
             end_of_batch = next_offset = offsets[-1] + bsize
-            if next_offset >= len(mz):
+            if next_offset >= len(values):
                 break
-            while mz[end_of_batch] - mz[next_offset - 1] <= mz_tol:
+            while values[end_of_batch] - values[next_offset - 1] <= tol:
                 next_offset -= 1
                 if (
                     next_offset <= offsets[-1]
                     or end_of_batch - next_offset >= bsize // 5
                 ):
                     logger.warning(
-                        "Batch size is too small to accommodate the m/z tolerance. "
+                        "Batch size is too small to accommodate the %s tolerance. "
                         "Increasing the batch size to %d...",
+                        dim,
                         bsize * 2,
                     )
                     return self.batch_offsets(bsize * 2, experiment)

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import DTypeLike
     from .experiment import Experiment
+    from .utils.config import Config
     from .utils.abc import Index, SpectrumCollection
 
 logger = logging.getLogger(__name__)
@@ -183,6 +184,30 @@ class MzIrtDataFrame(Fixture):
             shm_dict[name] = shm
         return np.ndarray(shape, dtype=dtype, buffer=shm.buf)
 
+    @staticmethod
+    def sorting_dimension(
+        data: dict | pd.DataFrame, config: "Config"
+    ) -> tuple[int, str]:
+        dimensions = ["m/z", "irt"]
+        tolerances = [config.mz_tolerance, config.irt_tolerance]
+        if config.model_ccs is not None:
+            dimensions.append("ccs")
+            tolerances.append(config.ccs_rtolerance)
+
+        peak_capacity = [
+            (data[dim].max() - data[dim].min()) / tol
+            for dim, tol in zip(dimensions, tolerances)
+        ]
+        idx = int(np.argmin(peak_capacity))
+        logger.debug(
+            "Sorting dimension peak capacities: %s, selected dimension: %s",
+            ", ".join(
+                f"{dim}: {cap:.2f}" for dim, cap in zip(dimensions, peak_capacity)
+            ),
+            dimensions[idx],
+        )
+        return idx, dimensions[idx]
+
     def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
         input_file = experiment.config.input_file
         seq = np.unique(np.loadtxt(input_file, dtype=bytes))
@@ -299,8 +324,9 @@ class MzIrtDataFrame(Fixture):
                 mzrt[i, 0] = cmass.fast_mass(peptide, charge=charge)
 
         # sort by m/z for better perforamce
-        logger.debug("Sorting peptides by m/z for better performance")
-        idx = np.argsort(mzrt[:, 0])
+        i, dim = self.sorting_dimension(peptide_data, experiment.config)
+        logger.info("Sorting peptides by %s for better performance", dim)
+        idx = np.argsort(mzrt[:, i])
         for arr in [seq_array, charge_array, mzrt]:
             arr[:] = arr[idx]
 
