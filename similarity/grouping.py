@@ -227,14 +227,16 @@ class SpectrumGrouping(Fixture):
                 break
             while mz[end_of_batch] - mz[next_offset - 1] <= mz_tol:
                 next_offset -= 1
-            if next_offset <= offsets[-1]:
-                logger.warning(
-                    "Batch size is too small to accommodate the m/z tolerance. "
-                    "Doubling the batch size to %d...",
-                    bsize * 2,
-                )
-                return self.batch_offsets(bsize * 2, experiment)
-                next_offset = offsets[-1] + bsize
+                if (
+                    next_offset <= offsets[-1]
+                    or end_of_batch - next_offset >= bsize // 5
+                ):
+                    logger.warning(
+                        "Batch size is too small to accommodate the m/z tolerance. "
+                        "Increasing the batch size to %d...",
+                        bsize * 10,
+                    )
+                    return self.batch_offsets(bsize * 10, experiment)
             offsets.append(next_offset)
         logger.debug("Calculated batch offsets: %s", offsets[:10])
         return bsize, offsets
