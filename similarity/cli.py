@@ -83,6 +83,13 @@ def experiment() -> None:
 def time_scoring() -> None:
     p = get_argparser(Config)
     args = p.parse_args()
+    p.add_argument(
+        "-a",
+        "--array-file",
+        nargs="?",
+        type=Path,
+        help="Path to output .npy file with raw score arrays",
+    )
     logger = setup_logging(args)
     kw = vars(args).copy()
     kw.pop("verbose", None)
@@ -93,9 +100,12 @@ def time_scoring() -> None:
         _ = exp.predicted_spectra  # Ensure spectra are predicted before timing
         logger.info("Timing the scoring...")
         start_time = datetime.now()
-        _ = exp.score_array
+        arr = exp.score_array
         elapsed = datetime.now() - start_time
         logger.info("Scoring completed in %s", elapsed)
+        if args.array_file:
+            np.save(args.array_file, arr)
+            logger.info("Saved raw score arrays to %s", args.array_file)
 
 
 if __name__ == "__main__":
