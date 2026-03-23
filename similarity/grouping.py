@@ -23,10 +23,8 @@ class GroupingWorker(ExperimentWorker):
     """
 
     config: "Config"
-    tree: cKDTree
     radius: float
     shape: tuple[int, ...]
-    nbatches: int
     seq_dtype: np.dtype
     shared_memory: dict[str, "SharedMemory"]
     spectra: "SpectrumCollection"
@@ -58,9 +56,9 @@ class GroupingWorker(ExperimentWorker):
             return self.within_tolerance_3d
         return self.within_tolerance_2d
 
-    def kdtree(self, batch: int) -> cKDTree:
+    def kdtree(self, offset: int) -> cKDTree:
         bsize = self.config.batch_size
-        arr = self.mzrt[batch * bsize : (batch + 1) * bsize]
+        arr = self.mzrt[offset : offset + bsize]
         return cKDTree(arr)
 
     @staticmethod
@@ -122,30 +120,40 @@ class GroupingWorker(ExperimentWorker):
 
     def process_batch(
         self,
-        batch: int,
+        offset: int,
+        previous_end: int,  # end of the previous batch, used to skip spectra that were already processed in the previous batch due to overlap
     ) -> Iterable[tuple[int, list[int], list[float]]]:
 
-        logger.info("Processing batch %d of %d...", batch + 1, self.nbatches)
-        subtree = self.kdtree(batch)
+        logger.info(
+            "Processing peptides %d to %d...",
+            offset + 1,
+            offset + self.config.batch_size,
+        )
+        subtree = self.kdtree(offset)
 
-        offset = batch * self.config.batch_size
         # format PID as str because it can be None if called from a non-multiprocessing context
-        logger.debug("Batch idx %d, offset %d, PID %s", batch, offset, self.pid)
+        logger.debug(
+            "Batch offset %d, end of previous batch %d, PID %s",
+            offset,
+            previous_end,
+            self.pid,
+        )
 
-        neighbors = subtree.query_ball_tree(self.tree, r=self.radius)
+        neighbors = subtree.query_ball_tree(subtree, r=self.radius)
 
-        for x, indices in enumerate(neighbors):
+        for i_, indices in enumerate(neighbors):
             matches = []
             scores = []
-            j = x + offset
-            for i in indices:
-                if i < j and self.within_tolerance(i, j):
+            i = i_ + offset
+            for j_ in indices:
+                j = j_ + offset
+                if i < j and j >= previous_end and self.within_tolerance(i, j):
                     score = self.score_pair(i, j)
                     if score >= self.config.score_threshold:
-                        matches.append(i)
+                        matches.append(j)
                         scores.append(score)
             if matches:
-                yield self.encode_result(j, matches, scores)
+                yield (i, matches, scores)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -167,18 +175,18 @@ class GroupingWorker(ExperimentWorker):
             buffer=self.shared_memory["precursor_charges"].buf,
         )
         while True:
-            batch = self.task_queue.get()
-            if batch is None:
+            task = self.task_queue.get()
+            if task is None:
                 logger.debug(
                     "Worker with PID %d received None, wrapping up...", self.pid
                 )
                 break
-            for result in self.process_batch(batch):
-                self.result_queue.put(result)
+            offset, prev = task
+            for result in self.process_batch(offset, prev):
+                self.result_queue.put(self.encode_result(*result))
             logger.debug(
-                "Finished batch %d of %d in worker %d. Current output queue size: %d",
-                batch + 1,
-                self.nbatches,
+                "Finished batch at offset %d in worker %d. Current output queue size: %d",
+                offset,
                 self.pid,
                 self.result_queue.qsize(),
             )
@@ -192,19 +200,6 @@ class GroupingWorker(ExperimentWorker):
 class SpectrumGrouping(Fixture):
     max_queue_size: int = 100000
 
-    def kdtree(self, experiment: "Experiment", batch: int | None = None) -> cKDTree:
-        df = experiment.peptides
-        names = ["m/z", "irt"]
-        if experiment.config.model_ccs is not None:
-            names.append("ccs")
-        if batch is not None:
-            df = df.iloc[
-                batch
-                * experiment.config.batch_size : (batch + 1)
-                * experiment.config.batch_size
-            ]
-        return cKDTree(df[names].values)
-
     def radius(self, experiment: "Experiment") -> float:
         mz_tol = experiment.config.mz_tolerance
         irt_tol = experiment.config.irt_tolerance
@@ -214,14 +209,38 @@ class SpectrumGrouping(Fixture):
             return np.sqrt(mz_tol**2 + irt_tol**2 + ccs_tol**2)
         return np.sqrt(mz_tol**2 + irt_tol**2)
 
-    def nbatches(self, experiment: "Experiment") -> int:
-        return math.ceil(len(experiment.peptides) / experiment.config.batch_size)
+    def batch_offsets(self, experiment: "Experiment") -> list[int]:
+        """
+        Returns the offsets for each batch. Given the batch size, partition the "mzrt" array that is sorted by m/z
+        so that batches overlap by the configured m/z tolerance. This ensures that all spectra that could potentially
+        be within tolerance of each other are processed in the same batch.
+        """
+        bsize = experiment.config.batch_size
+        mz_tol = experiment.config.mz_tolerance
+        mz = experiment.peptides["m/z"].values
+        offsets = [0]
+        while offsets[-1] < len(mz):
+            end_of_batch = next_offset = offsets[-1] + bsize
+            if next_offset >= len(mz):
+                break
+            while mz[end_of_batch] - mz[next_offset - 1] <= mz_tol:
+                next_offset -= 1
+            if next_offset <= offsets[-1]:
+                raise RuntimeError(
+                    "Batch size is too small to accommodate the m/z tolerance. "
+                    f"Consider increasing the batch size above {bsize}."
+                )
+            offsets.append(next_offset)
+        logger.debug("Calculated batch offsets: %s", offsets[:10])
+        return offsets
 
     def evaluate(self, experiment: "Experiment") -> np.ndarray:
-        tree = self.kdtree(experiment)
-        logger.info("Built cKDTree with %d nodes from %d points", tree.size, tree.n)
-        nb = self.nbatches(experiment)
-        logger.info("Processing %d spectra in %d batches...", tree.n, nb)
+        offsets = self.batch_offsets(experiment)
+        nb = len(offsets)
+        bsize = experiment.config.batch_size
+        logger.info(
+            "Processing %d spectra in %d batches...", len(experiment.peptides), nb
+        )
         dtype = np.dtype([("i", np.int32), ("j", np.int32), ("score", np.float32)])
         if experiment.config.workers > 1:
             logger.info(
@@ -236,13 +255,11 @@ class SpectrumGrouping(Fixture):
                     out_queue,
                     config=experiment.config,
                     shared_memory=MzIrtDataFrame._shared_memory[experiment],
-                    nbatches=nb,
                     shape=(
                         len(experiment.peptides),
                         3 if experiment.config.model_ccs is not None else 2,
                     ),
                     seq_dtype=experiment.peptides["peptide_sequences"].dtype,
-                    tree=tree,
                     spectra=experiment.predicted_spectra,
                     radius=self.radius(experiment),
                 )
@@ -251,8 +268,8 @@ class SpectrumGrouping(Fixture):
             for worker in workers:
                 worker.start()
 
-            for batch in range(nb):
-                in_queue.put(batch)
+            for offset, prev in zip(offsets, [-bsize] + offsets[:-1]):
+                in_queue.put((offset, prev + bsize))
 
             for _ in workers:
                 in_queue.put(None)
@@ -282,9 +299,7 @@ class SpectrumGrouping(Fixture):
             pseudoworker = GroupingWorker(
                 None,
                 None,
-                nbatches=self.nbatches(experiment),
                 config=experiment.config,
-                tree=tree,
                 spectra=experiment.predicted_spectra,
                 radius=self.radius(experiment),
             )
@@ -301,9 +316,9 @@ class SpectrumGrouping(Fixture):
             pseudoworker.charges = experiment.peptides["precursor_charges"].values
 
             def produce_results():
-                for batch in range(nb):
-                    for item in pseudoworker.process_batch(batch):
-                        i, matches, scores = GroupingWorker.decode_result(item)
+                for offset, prev in zip(offsets, [-bsize] + offsets[:-1]):
+                    for item in pseudoworker.process_batch(offset, prev + bsize):
+                        i, matches, scores = item
                         for m, s in zip(matches, scores):
                             yield (i, m, s)
 
