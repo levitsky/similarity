@@ -234,9 +234,9 @@ class SpectrumGrouping(Fixture):
                     logger.warning(
                         "Batch size is too small to accommodate the m/z tolerance. "
                         "Increasing the batch size to %d...",
-                        bsize * 10,
+                        bsize * 2,
                     )
-                    return self.batch_offsets(bsize * 10, experiment)
+                    return self.batch_offsets(bsize * 2, experiment)
             offsets.append(next_offset)
         logger.debug("Calculated batch offsets: %s", offsets[:10])
         return bsize, offsets
