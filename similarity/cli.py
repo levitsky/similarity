@@ -93,8 +93,8 @@ def time_scoring() -> None:
     args = p.parse_args()
     logger = setup_logging(args)
     kw = vars(args).copy()
-    kw.pop("verbose", None)
-    kw.pop("log_file", None)
+    for key in ["verbose", "array_file", "log_file"]:
+        kw.pop(key, None)
 
     config = Config(**kw)
     with Experiment(config) as exp:
