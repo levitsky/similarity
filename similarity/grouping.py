@@ -129,7 +129,8 @@ class GroupingWorker(ExperimentWorker):
         subtree = self.kdtree(batch)
 
         offset = batch * self.config.batch_size
-        logger.debug("Batch idx %d, offset %d, PID %d", batch, offset, self.pid)
+        # format PID as str because it can be None if called from a non-multiprocessing context
+        logger.debug("Batch idx %d, offset %d, PID %s", batch, offset, self.pid)
 
         neighbors = subtree.query_ball_tree(self.tree, r=self.radius)
 
