@@ -32,6 +32,8 @@ class GroupingWorker(ExperimentWorker):
     spectra: "SpectrumCollection"
     peptides: np.ndarray
     charges: np.ndarray
+    scaling_factors: np.ndarray
+    mzrt: np.ndarray
 
     def within_tolerance_2d(self, i: int, j: int) -> bool:
         arr = self.mzrt
@@ -60,7 +62,7 @@ class GroupingWorker(ExperimentWorker):
 
     def kdtree(self, batch: int) -> cKDTree:
         bsize = self.config.batch_size
-        arr = self.mzrt[batch * bsize : (batch + 1) * bsize]
+        arr = self.mzrt[batch * bsize : (batch + 1) * bsize] * self.scaling_factors
         return cKDTree(arr)
 
     @staticmethod
@@ -132,7 +134,9 @@ class GroupingWorker(ExperimentWorker):
         # format PID as str because it can be None if called from a non-multiprocessing context
         logger.debug("Batch idx %d, offset %d, PID %s", batch, offset, self.pid)
 
-        neighbors = subtree.query_ball_tree(self.tree, r=self.radius)
+        neighbors = subtree.query_ball_tree(
+            self.tree, r=self.config.mz_tolerance * np.sqrt(self.mzrt.shape[1])
+        )
 
         for x, indices in enumerate(neighbors):
             matches = []
@@ -192,33 +196,43 @@ class GroupingWorker(ExperimentWorker):
 class SpectrumGrouping(Fixture):
     max_queue_size: int = 100000
 
-    def kdtree(self, experiment: "Experiment", batch: int | None = None) -> cKDTree:
+    def kdtree(self, experiment: "Experiment", factors: np.ndarray) -> cKDTree:
+        """Build a cKDTree from the peptide DataFrame, applying the scaling factors to each dimension."""
         df = experiment.peptides
         names = ["m/z", "irt"]
         if experiment.config.model_ccs is not None:
             names.append("ccs")
-        if batch is not None:
-            df = df.iloc[
-                batch
-                * experiment.config.batch_size : (batch + 1)
-                * experiment.config.batch_size
-            ]
-        return cKDTree(df[names].values)
+        return cKDTree(df[names].values * factors)
 
-    def radius(self, experiment: "Experiment") -> float:
+    def scaling_factors(self, experiment: "Experiment") -> np.ndarray:
+        """Calculate scaling factors for each dimension based on the configured tolerances.
+        With these factors, all tolerances will be scaled to the m/z tolerance."""
         mz_tol = experiment.config.mz_tolerance
         irt_tol = experiment.config.irt_tolerance
         if experiment.config.model_ccs is not None:
             ccs_rtol = experiment.config.ccs_rtolerance
             ccs_tol = ccs_rtol * experiment.peptides["ccs"].max()
-            return np.sqrt(mz_tol**2 + irt_tol**2 + ccs_tol**2)
-        return np.sqrt(mz_tol**2 + irt_tol**2)
+        else:
+            ccs_tol = None
+        factors = [1.0, mz_tol / irt_tol]
+        if ccs_tol is not None:
+            factors.append(mz_tol / ccs_tol)
+        out = np.array(factors, dtype=np.float32)
+        logger.debug(
+            "Calculated scaling factors: %s (m/z tol: %f, iRT tol: %f, CCS tol: %s)",
+            out,
+            mz_tol,
+            irt_tol,
+            f"{ccs_tol:.2f}" if ccs_tol is not None else "N/A",
+        )
+        return out
 
     def nbatches(self, experiment: "Experiment") -> int:
         return math.ceil(len(experiment.peptides) / experiment.config.batch_size)
 
     def evaluate(self, experiment: "Experiment") -> np.ndarray:
-        tree = self.kdtree(experiment)
+        factors = self.scaling_factors(experiment)
+        tree = self.kdtree(experiment, factors)
         logger.info("Built cKDTree with %d nodes from %d points", tree.size, tree.n)
         nb = self.nbatches(experiment)
         logger.info("Processing %d spectra in %d batches...", tree.n, nb)
@@ -244,7 +258,7 @@ class SpectrumGrouping(Fixture):
                     seq_dtype=experiment.peptides["peptide_sequences"].dtype,
                     tree=tree,
                     spectra=experiment.predicted_spectra,
-                    radius=self.radius(experiment),
+                    scaling_factors=factors,
                 )
                 for _ in range(experiment.config.workers)
             ]
@@ -286,7 +300,7 @@ class SpectrumGrouping(Fixture):
                 config=experiment.config,
                 tree=tree,
                 spectra=experiment.predicted_spectra,
-                radius=self.radius(experiment),
+                scaling_factors=factors,
             )
 
             pseudoworker.mzrt = np.ndarray(
