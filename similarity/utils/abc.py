@@ -116,7 +116,7 @@ class Index(ABC):
     ) -> "Index | None":
         if (
             index_type in {IndexType.IRT, IndexType.CCS}
-            and not experiment.config.cache_properties
+            and not experiment.config.cache_conf.cache_properties
         ):
             return None
         index_cls = cls.index_type.get(index_type)

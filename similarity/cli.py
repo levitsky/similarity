@@ -1,4 +1,5 @@
-from .utils.config import Config
+from .utils.config import Config, cache_args, CacheConfigType
+from .utils.cache import CacheType
 from .experiment import Experiment
 from pathlib import Path
 import numpy as np
@@ -64,6 +65,27 @@ def experiment() -> None:
     kw = vars(args).copy()
     for key in ["verbose", "output_file", "peptide_file", "array_file", "log_file"]:
         kw.pop(key)
+
+    cache_type = kw["cache"]
+    logger.debug("Cache configuration type: %s", cache_type)
+    logger.debug("Registered cache configuration arguments: %s", cache_args)
+    if cache_type != "NONE":
+        cache_kw = {}
+        for k, v in cache_args.items():
+            value = kw.pop(k, None)
+            for cct, field in v:
+                if cct.name == cache_type:
+                    cache_kw[k] = (
+                        field.type(value) if value is not None else field.default
+                    )
+                    break
+        logger.debug("Cache configuration arguments: %s", cache_kw)
+        kw["cache_conf"] = CacheConfigType[cache_type].value(**cache_kw)
+    else:
+        kw["cache_conf"] = None
+        for k in cache_args.keys():
+            kw.pop(k, None)
+    kw["cache"] = CacheType[cache_type]
 
     config = Config(**kw)
     with Experiment(config) as exp:

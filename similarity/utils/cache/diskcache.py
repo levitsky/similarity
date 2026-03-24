@@ -34,7 +34,7 @@ class Index(diskcache.Index, BaseIndex, ABC):
     def _get_cache_object(experiment: "Experiment") -> "diskcache.Cache":
         if experiment not in Index._cache_registry:
             Index._cache_registry[experiment] = diskcache.Cache(
-                str(experiment.config.cache_dir),
+                str(experiment.config.cache_conf.cache_dir),
                 size_limit=0,
                 cull_limit=0,
                 eviction_policy="none",

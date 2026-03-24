@@ -226,7 +226,10 @@ class MzIrtDataFrame(Fixture):
 
         mzrt = self.shared_array(experiment, "mzrt", shape=mzrt_shape, dtype=np.float32)
         mzrt[:] = np.nan
-        if experiment.config.cache_properties:
+        if (
+            experiment.config.cache_conf
+            and experiment.config.cache_conf.cache_properties
+        ):
             index = experiment.cache[IndexType.IRT]
         else:
             index = None
@@ -261,7 +264,10 @@ class MzIrtDataFrame(Fixture):
         }
 
         if experiment.config.model_ccs is not None:
-            if experiment.config.cache_properties:
+            if (
+                experiment.config.cache_conf
+                and experiment.config.cache_conf.cache_properties
+            ):
                 index = experiment.cache[IndexType.CCS]
             else:
                 index = None
