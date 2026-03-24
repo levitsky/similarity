@@ -8,9 +8,13 @@ from .cache import CacheType
 from .spectrum_collection import SpectrumCollectionType
 from abc import ABC
 from typing import Any, TYPE_CHECKING
+import logging
 
 if TYPE_CHECKING:
     from dataclasses import Field
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,3 +132,12 @@ class Config(BaseConfig):
     score_threshold: float = 0.0
     spectrum_collection: SpectrumCollectionType = SpectrumCollectionType.SHAREDARRAY
     max_peaks: int = 50
+
+    def __post_init__(self):
+        if self.cache != CacheType.NONE and self.cache_conf is None:
+            logger.warning(
+                "cache_conf should be provided when cache is enabled. Using default configuration for {self.cache.name}."
+            )
+            object.__setattr__(
+                self, "cache_conf", CacheConfigType[self.cache.name].value()
+            )
