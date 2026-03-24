@@ -57,11 +57,9 @@ class BaseConfig(ABC):
         parser = argparse.ArgumentParser(description="Experiment configuration")
         for field in fields(cls):
             if field.name == "cache_conf":
-                # print("Adding cache configuration arguments...")
                 cache_group = parser.add_argument_group("Cache configuration")
 
                 for fn, subfs in cache_args.items():
-                    # print(f"Adding argument for {fn}...")
                     c, subf = subfs[0]
                     name, kw = c.value._args_for_field(subf)
                     help_text = f"(used for {', '.join(cf.name for cf, _ in subfs)} cache configuration)"
@@ -101,9 +99,7 @@ cache_args: dict[str, list[tuple[CacheConfigType, "Field"]]] = {}
 Cache configuration arguments. Keys are names of fields, values are lists of tuples of (CacheConfigType, Field) for each cache configuration type that uses the field.
 """
 for c in CacheConfigType:
-    # print(f"Adding arguments for {c.name} cache configuration...")
     for subf in fields(c.value):
-        # print(f"Saving data for {subf.name}...")
         cache_args.setdefault(subf.name, []).append((c, subf))
 
 
