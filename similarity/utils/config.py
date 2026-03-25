@@ -58,6 +58,11 @@ class BaseConfig(ABC):
         if isinstance(field.type, EnumType):
             kw["default"] = cls.get_default_enum(field)
             kw["choices"] = list(choice.name for choice in field.type)
+        elif isinstance(kw.get("type"), EnumType):  # assume it's an optional Enum
+            kw["choices"] = list(choice.name for choice in kw["type"]) + [None]
+            kw["type"] = (
+                None  # argparse doesn't support optional Enums, so we have to handle None as a special case
+            )
         return name, kw
 
     @classmethod

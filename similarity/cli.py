@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import logging
 from enum import EnumType
+from types import UnionType
 from datetime import datetime
 from dataclasses import fields
 from typing import TYPE_CHECKING, Any
@@ -57,11 +58,14 @@ def parse_args(
     logger.debug("Registered cache configuration arguments: %s", cache_args)
 
     for field in fields(Config):
-        if isinstance(field.type, EnumType):
+        ftype = field.type
+        if isinstance(field.type, UnionType):
+            ftype = field.type.__args__[0]
+        if isinstance(ftype, EnumType):
             value = kw.get(field.name, None)
             if value is not None:
                 try:
-                    kw[field.name] = field.type[value]
+                    kw[field.name] = ftype[value]
                     logger.debug(
                         "Converted argument %s to enum: %s", field.name, kw[field.name]
                     )
@@ -70,7 +74,7 @@ def parse_args(
                         "Invalid value for %s: %s. Expected one of: %s",
                         field.name,
                         value,
-                        list(e.name for e in field.type),
+                        list(e.name for e in ftype),
                     )
                     raise ValueError(f"Invalid value for {field.name}: {value}")
 
