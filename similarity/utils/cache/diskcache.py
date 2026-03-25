@@ -1,12 +1,18 @@
 import threading
 import queue
 import diskcache
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import Any, TYPE_CHECKING, Iterable
 import logging
 import numpy as np
 from tqdm import tqdm
-from ..abc import Index as BaseIndex, IndexType
+from ..abc import IndexType
+from .common import (
+    ByteStringKeyCache,
+    ByteStringSpectrumCache,
+    ByteStringRTCache,
+    ByteStringCCSCache,
+)
 
 if TYPE_CHECKING:
     from ...experiment import Experiment
@@ -16,7 +22,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class Index(diskcache.Index, BaseIndex, ABC):
+class Index(diskcache.Index, ByteStringKeyCache, ABC):
     """Index for predicted spectra. Uses experiment config to add collision energy, charge and model info to the key."""
 
     _saving_thread: threading.Thread
@@ -25,10 +31,6 @@ class Index(diskcache.Index, BaseIndex, ABC):
     _done = threading.Event()
     name: str
     _cache_registry: dict["Experiment", diskcache.Cache] = {}
-
-    @abstractmethod
-    def _full_key(self, key: Any) -> bytes:
-        pass
 
     @staticmethod
     def _get_cache_object(experiment: "Experiment") -> "diskcache.Cache":
@@ -51,7 +53,7 @@ class Index(diskcache.Index, BaseIndex, ABC):
         return self.__class__, (self.experiment,)
 
     def __init__(self, experiment: "Experiment"):
-        BaseIndex.__init__(self, experiment)
+        ByteStringKeyCache.__init__(self, experiment)
         self._save_queue = queue.Queue()
         self._saving_thread = threading.Thread(
             target=self._save_worker,
@@ -81,19 +83,6 @@ class Index(diskcache.Index, BaseIndex, ABC):
     def __contains__(self, key: Any) -> bool:
         full_key = self._full_key(key)
         return full_key in self.cache  # direct check on Index doesn't work
-
-    @abstractmethod
-    def _key_from_row(self, row: "pd.Series") -> Any:
-        pass
-
-    def _preprocess_predictions(self, predictions: dict[str, "np.ndarray"]) -> Iterable:
-        """
-        Preprocess raw predictions from the model into the format expected by _write_to_cache.
-        Should return an iterable of values to be cached, the same size as `inputs`.
-        """
-        return predictions[self.name].reshape(
-            -1
-        )  # default implementation for 1D predictions
 
     def _write_to_cache(self, inputs: "pd.DataFrame", predictions: Iterable) -> None:
         for (_, row), value in zip(inputs.iterrows(), predictions):
@@ -170,54 +159,16 @@ class Index(diskcache.Index, BaseIndex, ABC):
         self._cache.close()
 
 
-class SpectrumIndex(Index):
-    name = "intensity"  # not used as a key, but for logging and debugging
-
-    def _full_key(self, key: tuple[bytes, int]) -> bytes:
-        config = self.experiment.config
-        return key[0] + bytes(
-            f"_{key[1]}_{config.collision_energy}_{config.fragmentation_type}_{config.model_intensity.value}",
-            "ascii",
-        )
-
-    def _key_from_row(self, row: "pd.Series") -> Any:
-        return row["peptide_sequences"], row["precursor_charges"]
-
-    def _preprocess_predictions(
-        self, predictions: dict[str, "np.ndarray"]
-    ) -> list[tuple["np.ndarray", "np.ndarray"]]:
-        processed = []
-        for mz, intensities in zip(predictions["mz"], predictions["intensities"]):
-            idx = mz > 0
-            processed.append(
-                (
-                    mz[idx],
-                    intensities[idx],
-                )
-            )
-        return processed
+class SpectrumIndex(ByteStringSpectrumCache, Index):
+    pass
 
 
-class RTIndex(Index):
-    name = "irt"
-
-    def _key_from_row(self, row: "pd.Series") -> bytes:
-        return row["peptide_sequences"]
-
-    def _full_key(self, key: bytes) -> bytes:
-        config = self.experiment.config
-        return key + bytes(config.model_irt.value, "ascii")
+class RTIndex(ByteStringRTCache, Index):
+    pass
 
 
-class IMIndex(Index):
-    name = "ccs"
-
-    def _key_from_row(self, row: "pd.Series") -> tuple[bytes, int]:
-        return row["peptide_sequences"], row["precursor_charges"]
-
-    def _full_key(self, key: tuple[bytes, int]) -> bytes:
-        config = self.experiment.config
-        return key[0] + bytes(f"_{key[1]}_{config.model_ccs.value}", "ascii")
+class IMIndex(ByteStringCCSCache, Index):
+    pass
 
 
 Index.index_type = {

@@ -1,19 +1,19 @@
 from enum import Enum
 from typing import TYPE_CHECKING
 from . import diskcache
-from ..abc import Index, IndexType
+from ..abc import Cache, IndexType
 
 if TYPE_CHECKING:
     from ...experiment import Experiment
 
 
-class NoCache(Index):
+class NoCache(Cache):
     """This type means that caching is not configured."""
 
     @classmethod
     def get_index(
         cls, index_type: IndexType, experiment: "Experiment"
-    ) -> "Index | None":
+    ) -> "Cache | None":
         return None
 
 

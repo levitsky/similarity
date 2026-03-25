@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import DTypeLike
     from .experiment import Experiment
-    from .utils.abc import Index, SpectrumCollection
+    from .utils.abc import Cache, SpectrumCollection
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ class MzIrtDataFrame(Fixture):
     def get_predictions(
         self,
         name: str,
-        index: "Index | None",
+        index: "Cache | None",
         inputs: pd.DataFrame,
         output: np.ndarray,
         experiment: "Experiment",

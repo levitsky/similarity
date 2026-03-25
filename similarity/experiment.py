@@ -1,6 +1,6 @@
 import logging
 from .utils.config import Config
-from .utils.cache import IndexType
+from .utils.abc import Cache, IndexType
 from .prediction import PredictedSpectrumCollection, MzIrtDataFrame
 from .grouping import SpectrumGrouping
 from .output import ScoresDataFrame
@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import pandas as pd
     import numpy as np
-    from .utils.abc import SpectrumCollection, Index
+    from .utils.abc import SpectrumCollection, Cache
 
 
 logger = logging.getLogger(__name__)
@@ -29,10 +29,15 @@ class Experiment:
 
     def __init__(self, config: Config):
         self.config = config
-        self.cache: dict[IndexType, "Index | None"] = {
+        self.cache: dict[IndexType, "Cache | None"] = {
             index_type: config.cache.value.get_index(index_type, self)
             for index_type in IndexType
         }
+        logger.debug(
+            "Initialized experiment %d with cache configuration: %s",
+            id(self),
+            self.cache,
+        )
 
     def __reduce__(self) -> tuple:
         return self.__class__, (self.config,)
