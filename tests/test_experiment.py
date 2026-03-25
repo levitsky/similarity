@@ -5,7 +5,12 @@ import pandas as pd
 import dataclasses
 from similarity.experiment import Experiment
 from similarity.grouping import GroupingWorker
-from similarity.utils.config import Config
+from similarity.utils.config import (
+    Config,
+    KoinaIntensityModel,
+    KoinaRTModel,
+    KoinaCCSModel,
+)
 from similarity.utils.cache import CacheType
 from similarity.utils.spectrum_collection import SpectrumCollectionType
 from pathlib import Path
@@ -124,8 +129,8 @@ class ExperimentTest(TestBase):
         config = Config(
             ptms=True,
             input_file=Path("tests/test_peptides_ptms.txt"),
-            model_irt="Prosit_2025_irt_40PTM",
-            model_intensity="Prosit_2025_intensity_40PTM",
+            model_irt=KoinaRTModel.Prosit_2025_irt_40PTM,
+            model_intensity=KoinaIntensityModel.Prosit_2025_intensity_40PTM,
             fragmentation_type="HCD",
         )
         with Experiment(config) as exp:
@@ -136,6 +141,15 @@ class ExperimentTest(TestBase):
                 np.allclose(sorted(exp.peptides["m/z"]), [501.752743, 580.382344])
             )
             self.assertEqual(exp.score_df.shape[0], 0)
+
+    def test_ccs(self):
+        """Test that Experiment can handle CCS predictions."""
+        config = dataclasses.replace(
+            self.config,
+            model_ccs=KoinaCCSModel.IM2Deep,
+        )
+        with Experiment(config) as exp:
+            self.assertEqual(exp.peptides["ccs"].isna().sum(), 0)
 
 
 class EquivalenceTest(TestBase):

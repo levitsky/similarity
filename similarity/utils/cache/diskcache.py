@@ -176,7 +176,7 @@ class SpectrumIndex(Index):
     def _full_key(self, key: tuple[bytes, int]) -> bytes:
         config = self.experiment.config
         return key[0] + bytes(
-            f"_{key[1]}_{config.collision_energy}_{config.fragmentation_type}_{config.model_intensity}",
+            f"_{key[1]}_{config.collision_energy}_{config.fragmentation_type}_{config.model_intensity.value}",
             "ascii",
         )
 
@@ -206,18 +206,18 @@ class RTIndex(Index):
 
     def _full_key(self, key: bytes) -> bytes:
         config = self.experiment.config
-        return key + bytes(config.model_irt, "ascii")
+        return key + bytes(config.model_irt.value, "ascii")
 
 
 class IMIndex(Index):
     name = "ccs"
 
     def _key_from_row(self, row: "pd.Series") -> tuple[bytes, int]:
-        return row["peptide_sequences"], row["charge"]
+        return row["peptide_sequences"], row["precursor_charges"]
 
     def _full_key(self, key: tuple[bytes, int]) -> bytes:
         config = self.experiment.config
-        return key[0] + bytes(f"_{key[1]}_{config.model_ccs}", "ascii")
+        return key[0] + bytes(f"_{key[1]}_{config.model_ccs.value}", "ascii")
 
 
 Index.index_type = {

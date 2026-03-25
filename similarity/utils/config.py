@@ -3,7 +3,7 @@ import argparse
 from dataclasses import dataclass, fields
 from types import UnionType
 import multiprocessing as mp
-from enum import EnumType, Enum
+from enum import EnumType, Enum, auto
 from .cache import CacheType
 from .spectrum_collection import SpectrumCollectionType
 from abc import ABC
@@ -28,6 +28,12 @@ class BaseConfig(ABC):
         return ftype
 
     @staticmethod
+    def get_default_enum(field):
+        if isinstance(field.type, EnumType):
+            return field.default.name
+        return field.default
+
+    @staticmethod
     def get_required(field):
         if isinstance(field.type, UnionType):
             return field.default is None and type(None) not in field.type.__args__
@@ -48,7 +54,9 @@ class BaseConfig(ABC):
                 kw["action"] = "store_true"
         else:
             kw["type"] = cls.get_type(field.type)
+
         if isinstance(field.type, EnumType):
+            kw["default"] = cls.get_default_enum(field)
             kw["choices"] = list(choice.name for choice in field.type)
         return name, kw
 
@@ -103,6 +111,57 @@ for c in CacheConfigType:
         cache_args.setdefault(subf.name, []).append((c, subf))
 
 
+class LiteralEnum(Enum):
+    @staticmethod
+    def _generate_next_value_(name, start, count, last_values):
+        return name
+
+
+class KoinaIntensityModel(LiteralEnum):
+    AlphaPeptDeep_ms2_generic = auto()
+    Altimeter_2024_intensities = auto()
+    Altimeter_2024_isotopes = auto()
+    Altimeter_2024_splines = auto()
+    Altimeter_2024_splines_index = auto()
+    Prosit_2019_intensity = auto()
+    Prosit_2020_intensity_CID = auto()
+    Prosit_2020_intensity_HCD = auto()
+    Prosit_2020_intensity_TMT = auto()
+    Prosit_2023_intensity_timsTOF = auto()
+    Prosit_2024_intensity_PTMs_gl = auto()
+    Prosit_2024_intensity_cit = auto()
+    Prosit_2025_intensity_22PTM = auto()
+    Prosit_2025_intensity_40PTM = auto()
+    Prosit_2025_intensity_MultiFrag = auto()
+    Prosit_2025_intensity_lac = auto()
+    UniSpec = auto()
+    ms2pip_CID_TMT = auto()
+    ms2pip_HCD2021 = auto()
+    ms2pip_Immuno_HCD = auto()
+    ms2pip_TTOF5600 = auto()
+    ms2pip_iTRAQphospho = auto()
+    ms2pip_timsTOF2023 = auto()
+    ms2pip_timsTOF2024 = auto()
+
+
+class KoinaRTModel(LiteralEnum):
+    AlphaPeptDeep_rt_generic = auto()
+    Chronologer_RT = auto()
+    Deeplc_hela_hf = auto()
+    Prosit_2019_irt = auto()
+    Prosit_2020_irt_TMT = auto()
+    Prosit_2024_irt_PTMs_gl = auto()
+    Prosit_2024_irt_cit = auto()
+    Prosit_2025_irt_22PTM = auto()
+    Prosit_2025_irt_40PTM = auto()
+    Prosit_2025_irt_lac = auto()
+
+
+class KoinaCCSModel(LiteralEnum):
+    AlphaPeptDeep_ccs_generic = auto()
+    IM2Deep = auto()
+
+
 @dataclass(frozen=True, slots=True)
 class Config(BaseConfig):
     input_file: Path
@@ -110,9 +169,9 @@ class Config(BaseConfig):
     fragmentation_type: str | None = None
     min_charge: int = 2
     max_charge: int = 2
-    model_intensity: str = "Prosit_2020_intensity_HCD"
-    model_irt: str = "Prosit_2019_irt"
-    model_ccs: str | None = None
+    model_intensity: KoinaIntensityModel = KoinaIntensityModel.Prosit_2020_intensity_HCD
+    model_irt: KoinaRTModel = KoinaRTModel.Prosit_2019_irt
+    model_ccs: KoinaCCSModel | None = None
     mz_tolerance: float = 1.0
     irt_tolerance: float = 5.0
     peak_tolerance: float = 0.0

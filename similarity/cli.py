@@ -4,8 +4,10 @@ from .experiment import Experiment
 from pathlib import Path
 import numpy as np
 import logging
+from enum import EnumType
 from datetime import datetime
-from typing import TYPE_CHECKING
+from dataclasses import fields
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .utils.config import BaseConfig
@@ -37,8 +39,59 @@ def setup_logging(args: "Namespace") -> logging.Logger:
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
     logger = logging.getLogger(__name__)
-    logger.debug("Parsed arguments: %s", args)
     return logger
+
+
+def parse_args(
+    parser: "ArgumentParser",
+) -> tuple["Namespace", dict[str, Any], logging.Logger]:
+    """
+    Normalize command-line arguments, sets up logging and returns the namespace and a dict with converted configuration arguments.
+    """
+    args = parser.parse_args()
+    logger = setup_logging(args)
+    logger.debug("Parsed arguments: %s", args)
+    kw = vars(args).copy()
+    for key in ["verbose", "output_file", "peptide_file", "array_file", "log_file"]:
+        kw.pop(key, None)
+    logger.debug("Registered cache configuration arguments: %s", cache_args)
+
+    for field in fields(Config):
+        if isinstance(field.type, EnumType):
+            value = kw.get(field.name, None)
+            if value is not None:
+                try:
+                    kw[field.name] = field.type[value]
+                    logger.debug(
+                        "Converted argument %s to enum: %s", field.name, kw[field.name]
+                    )
+                except KeyError:
+                    logger.error(
+                        "Invalid value for %s: %s. Expected one of: %s",
+                        field.name,
+                        value,
+                        list(e.name for e in field.type),
+                    )
+                    raise ValueError(f"Invalid value for {field.name}: {value}")
+
+    cache_type = kw.get("cache", CacheType.NONE)
+    if cache_type != CacheType.NONE:
+        cache_kw = {}
+        for k, v in cache_args.items():
+            value = kw.pop(k, None)
+            for cct, field in v:
+                if cct.name == cache_type.name:
+                    cache_kw[k] = (
+                        field.type(value) if value is not None else field.default
+                    )
+                    break
+        logger.debug("Cache configuration arguments: %s", cache_kw)
+        kw["cache_conf"] = CacheConfigType[cache_type.name].value(**cache_kw)
+    else:
+        kw["cache_conf"] = None
+        for k in cache_args.keys():
+            kw.pop(k, None)
+    return args, kw, logger
 
 
 def experiment() -> None:
@@ -60,32 +113,7 @@ def experiment() -> None:
         type=Path,
         help="Path to output .npy file with raw score arrays",
     )
-    args = p.parse_args()
-    logger = setup_logging(args)
-    kw = vars(args).copy()
-    for key in ["verbose", "output_file", "peptide_file", "array_file", "log_file"]:
-        kw.pop(key)
-
-    cache_type = kw["cache"]
-    logger.debug("Cache configuration type: %s", cache_type)
-    logger.debug("Registered cache configuration arguments: %s", cache_args)
-    if cache_type != "NONE":
-        cache_kw = {}
-        for k, v in cache_args.items():
-            value = kw.pop(k, None)
-            for cct, field in v:
-                if cct.name == cache_type:
-                    cache_kw[k] = (
-                        field.type(value) if value is not None else field.default
-                    )
-                    break
-        logger.debug("Cache configuration arguments: %s", cache_kw)
-        kw["cache_conf"] = CacheConfigType[cache_type].value(**cache_kw)
-    else:
-        kw["cache_conf"] = None
-        for k in cache_args.keys():
-            kw.pop(k, None)
-    kw["cache"] = CacheType[cache_type]
+    args, kw, logger = parse_args(p)
 
     config = Config(**kw)
     with Experiment(config) as exp:
@@ -112,12 +140,7 @@ def time_scoring() -> None:
         type=Path,
         help="Path to output .npy file with raw score arrays",
     )
-    args = p.parse_args()
-
-    logger = setup_logging(args)
-    kw = vars(args).copy()
-    for key in ["verbose", "array_file", "log_file"]:
-        kw.pop(key, None)
+    args, kw, logger = parse_args(p)
 
     config = Config(**kw)
     with Experiment(config) as exp:

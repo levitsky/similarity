@@ -39,7 +39,9 @@ class PredictedSpectrumCollection(Fixture):
             logger.info("All spectra are cached, skipping prediction")
             return collection
         prediction_inputs = experiment.peptides.loc[~cached]
-        model = Koina(experiment.config.model_intensity, experiment.config.koina_host)
+        model = Koina(
+            experiment.config.model_intensity.name, experiment.config.koina_host
+        )
 
         bsize = experiment.config.batch_size * self.batch_factor
         nbatches = (prediction_inputs.shape[0] + bsize - 1) // bsize
@@ -51,7 +53,7 @@ class PredictedSpectrumCollection(Fixture):
         )
         with logging_redirect_tqdm():
             for i in trange(
-                nbatches, desc=experiment.config.model_intensity, unit="batch"
+                nbatches, desc=experiment.config.model_intensity.name, unit="batch"
             ):
                 logger.debug("Predicting batch %d of %d ...", i + 1, nbatches)
                 batch_inputs = prediction_inputs.iloc[i * bsize : (i + 1) * bsize]
@@ -116,7 +118,7 @@ class MzIrtDataFrame(Fixture):
                 "Predicting %s for %d peptides...", name, inputs.shape[0] - ncached
             )
             model = Koina(
-                getattr(experiment.config, f"model_{name}"),
+                getattr(experiment.config, f"model_{name}").name,
                 experiment.config.koina_host,
             )
             masked = inputs.loc[mask]
@@ -132,7 +134,7 @@ class MzIrtDataFrame(Fixture):
             with logging_redirect_tqdm():
                 for i in trange(
                     nbatches,
-                    desc=f"{getattr(experiment.config, f'model_{name}')}",
+                    desc=f"{getattr(experiment.config, f'model_{name}').name}",
                     unit="batch",
                 ):
                     batch_idx = idx[i * bsize : (i + 1) * bsize]
