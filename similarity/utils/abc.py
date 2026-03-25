@@ -7,6 +7,7 @@ from enum import Enum
 if TYPE_CHECKING:
     from ..experiment import Experiment
     from .cache.common import SpectrumCache
+    from contextlib import AbstractContextManager
     import pandas as pd
     import numpy as np
     from numpy.typing import NDArray
@@ -86,6 +87,11 @@ class Cache(ABC):
         pass
 
     @abstractmethod
+    def transact(self) -> "AbstractContextManager":
+        """Return a context manager for a transaction. Used to ensure atomicity of multiple cache operations."""
+        pass
+
+    @abstractmethod
     def save_predictions(
         self,
         inputs: "pd.DataFrame",
@@ -108,9 +114,11 @@ class Cache(ABC):
         """Fill missing values in inputs from cache."""
         pass
 
-    @abstractmethod
     def get(self, key: Any, default: Any = None) -> Any:
-        pass
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
     @classmethod
     def get_index(
