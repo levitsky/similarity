@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 
 class PredictedSpectrumCollection(Fixture):
-    batch_factor: int = 5
 
     @staticmethod
     def preprocess_predictions(
@@ -43,7 +42,7 @@ class PredictedSpectrumCollection(Fixture):
             experiment.config.model_intensity.name, experiment.config.koina_host
         )
 
-        bsize = experiment.config.batch_size * self.batch_factor
+        bsize = experiment.config.prediction_batch_size
         nbatches = (prediction_inputs.shape[0] + bsize - 1) // bsize
         logger.info(
             "Predicting spectra for %d peptides in %d batches of size %d...",
@@ -72,7 +71,6 @@ class PredictedSpectrumCollection(Fixture):
 
 class MzIrtDataFrame(Fixture):
     _shared_memory: dict["Experiment", dict[str, SharedMemory]] = {}
-    batch_factor: int = 5
 
     @classmethod
     def close(cls, experiment: "Experiment"):
@@ -122,7 +120,7 @@ class MzIrtDataFrame(Fixture):
                 experiment.config.koina_host,
             )
             masked = inputs.loc[mask]
-            bsize = experiment.config.batch_size * self.batch_factor
+            bsize = experiment.config.prediction_batch_size
             idx = np.where(mask)[0]
             nbatches = (idx.shape[0] + bsize - 1) // bsize
             logger.info(
