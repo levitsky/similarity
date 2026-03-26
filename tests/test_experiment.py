@@ -84,7 +84,12 @@ class ExperimentTest(TestBase):
                                 "Skipping combination of CacheType.NONE and SpectrumCollectionType.CACHED because it is not valid."
                             )
                             continue
-                        self.logger.info("Testing Experiment with %d workers", workers)
+                        self.logger.info(
+                            "Testing Experiment with %d workers, %s cache and %s spectrum collection",
+                            workers,
+                            cache_type.name,
+                            spectrum_collection_type.name,
+                        )
                         config = dataclasses.replace(
                             self.config,
                             workers=workers,
