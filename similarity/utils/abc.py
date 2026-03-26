@@ -87,11 +87,6 @@ class Cache(ABC):
         pass
 
     @abstractmethod
-    def transact(self) -> "AbstractContextManager":
-        """Return a context manager for a transaction. Used to ensure atomicity of multiple cache operations."""
-        pass
-
-    @abstractmethod
     def save_predictions(
         self,
         inputs: "pd.DataFrame",

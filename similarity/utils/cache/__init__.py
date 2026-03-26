@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import TYPE_CHECKING
-from . import diskcache
+from . import diskcache, redis
 from ..abc import Cache, IndexType
 
 if TYPE_CHECKING:
@@ -26,4 +26,5 @@ NoCache.index_type = {
 
 class CacheType(Enum):
     DISKCACHE = diskcache.Index
+    REDIS = redis.RedisCache
     NONE = NoCache

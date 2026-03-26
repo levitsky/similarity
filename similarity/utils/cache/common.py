@@ -5,11 +5,12 @@ from tqdm import tqdm
 from abc import abstractmethod
 from typing import Any, Iterable, TYPE_CHECKING
 from ..abc import Cache as CacheABC
+import numpy as np
 
 if TYPE_CHECKING:
     from ...experiment import Experiment
     import pandas as pd
-    import numpy as np
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,10 @@ class Cache(CacheABC):
 
     def __init__(self, experiment: "Experiment"):
         super().__init__(experiment)
+        self._save_queue = queue.Queue()
+        self._saving_thread = threading.Thread(
+            target=self._save_worker, name=f"{self.name}_saving_thread"
+        )
 
     def _save_worker(self):
         while True:

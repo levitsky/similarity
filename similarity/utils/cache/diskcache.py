@@ -1,12 +1,8 @@
 from contextlib import AbstractContextManager
-import queue
 import diskcache
 from abc import ABC
 from typing import Any, Iterable, TYPE_CHECKING
 import logging
-import numpy as np
-from pandas import DataFrame
-from tqdm import tqdm
 from ..abc import IndexType
 from .common import (
     ByteStringKeyCache,
@@ -45,10 +41,15 @@ class Index(ByteStringKeyCache, diskcache.Index, ABC):
 
     def __init__(self, experiment: "Experiment"):
         ByteStringKeyCache.__init__(self, experiment)
-        self._save_queue = queue.Queue()
 
         # not starting the thread here because `Index` can also be instantiated by workers
         # not calling super().__init__() because it would reassign self._cache
+
+    def __getitem__(self, key: Any) -> Any:
+        return self._cache[self._full_key(key)]
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        self._cache[self._full_key(key)] = value
 
     def __len__(self) -> int:
         return len(self._cache)
@@ -61,11 +62,11 @@ class Index(ByteStringKeyCache, diskcache.Index, ABC):
         self.wait()
         self._cache.close()
 
-    def transact_to_cache(self, inputs: DataFrame, predictions: Iterable) -> None:
+    def transact_to_cache(self, inputs: "pd.DataFrame", predictions: Iterable) -> None:
         with self.transact():
             self.write_to_cache(inputs, predictions)
 
-    def transact(self) -> AbstractContextManager[Any, bool | None]:
+    def transact(self) -> AbstractContextManager:
         return super().transact()
 
 

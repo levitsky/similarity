@@ -1,3 +1,4 @@
+from pandas import DataFrame, Series
 import redis
 from dataclasses import asdict
 import logging
@@ -24,14 +25,14 @@ logger = logging.getLogger(__name__)
 class RedisAgent(ByteStringKeyCache, ABC):
     _client: "redis.Redis | redis.client.Pipeline"
 
-    @abstractmethod
     @staticmethod
-    def encode_value(value: Any) -> bytes | int | float:
+    @abstractmethod
+    def encode_value(value: Any) -> bytes:
         pass
 
-    @abstractmethod
     @staticmethod
-    def decode_value(value: bytes | int) -> Any:
+    @abstractmethod
+    def decode_value(value: bytes) -> Any:
         pass
 
     def __getitem__(self, key: Any) -> Any:
@@ -56,7 +57,9 @@ class RedisPipeline(RedisAgent):
     _client: "redis.client.Pipeline"
 
     def __init__(self, parent: "RedisCache"):
+        self.name = parent.name
         super().__init__(parent.experiment)
+        self.parent = parent
         self._client = parent._client.pipeline()
 
     def __enter__(self):
@@ -64,10 +67,28 @@ class RedisPipeline(RedisAgent):
 
     def __exit__(self, exc_type, exc_value, traceback):
         if exc_type is None:
-            self._client.execute()
+            self.close()
 
     def transact(self) -> "RedisPipeline":
         return self
+
+    def _full_key(self, key: Any) -> bytes:
+        return self.parent._full_key(key)
+
+    def _key_from_row(self, row: Series) -> Any:
+        return self.parent._key_from_row(row)
+
+    def close(self):
+        self._client.execute()
+
+    def decode_value(self, value: bytes) -> Any:
+        return self.parent.decode_value(value)
+
+    def encode_value(self, value: Any) -> bytes:
+        return self.parent.encode_value(value)
+
+    def transact_to_cache(self, inputs: DataFrame, predictions: Iterable) -> None:
+        return self.write_to_cache(inputs, predictions)
 
 
 class RedisCache(RedisAgent):
@@ -77,10 +98,9 @@ class RedisCache(RedisAgent):
         super().__init__(experiment)
         cconf = experiment.config.cache_conf
         assert cconf is not None, "Cache configuration must be provided for RedisCache"
-        self._client = redis.Redis(**asdict(cconf), decode_responses=False)
-
-    def close(self):
-        self._client.close()
+        kwargs = asdict(cconf)
+        kwargs.pop("cache_properties", None)
+        self._client = redis.Redis(**kwargs, decode_responses=False)
 
     def transact(self) -> "RedisPipeline":
         return RedisPipeline(self)
@@ -107,7 +127,7 @@ class RedisSpectrumCache(ByteStringSpectrumCache, RedisCache):
         return mzs, intensities
 
 
-class FloatRedisCache(ByteStringKeyCache, RedisCache):
+class FloatRedisCache(RedisCache):
     def encode_value(self, value: float) -> bytes:
         return str(value).encode("ascii")
 
@@ -115,11 +135,11 @@ class FloatRedisCache(ByteStringKeyCache, RedisCache):
         return float(value)
 
 
-class RedisRTCache(FloatRedisCache, ByteStringRTCache):
+class RedisRTCache(ByteStringRTCache, FloatRedisCache):
     pass
 
 
-class RedisCCSCache(FloatRedisCache, ByteStringCCSCache):
+class RedisCCSCache(ByteStringCCSCache, FloatRedisCache):
     pass
 
 
