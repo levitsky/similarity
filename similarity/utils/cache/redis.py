@@ -139,6 +139,8 @@ class RedisCache(RedisAgent):
 
 
 class RedisSpectrumCache(ByteStringSpectrumCache, RedisCache):
+    batch_size: int = 50000
+
     def encode_value(self, value: tuple[np.ndarray, np.ndarray]) -> bytes:
         mzs, intensities = value
         return mzs.tobytes() + intensities.tobytes()
