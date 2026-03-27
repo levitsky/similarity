@@ -118,6 +118,7 @@ class RedisCache(RedisAgent):
         # override default behavior to use a pipeline for batch retrieval
         bsize = self.batch_size
         nb = (len(inputs) + bsize - 1) // bsize
+        logger.debug("Filling from Redis cache in %d batches of size %d", nb, bsize)
         for batch in trange(nb, desc=f"Loading {self.name} from cache", unit="batch"):
             with self.transact() as pipe:
                 for _, row in inputs.iloc[
@@ -126,11 +127,6 @@ class RedisCache(RedisAgent):
                     key = self._key_from_row(row)
                     pipe._client.get(pipe._full_key(key))
                 results = pipe.execute()
-                logger.debug(
-                    "Retrieved %d items from Redis cache: %s",
-                    len(results),
-                    results[:10],
-                )
                 for i, value in enumerate(results, start=batch * bsize):
                     if value is not None:
                         output[i] = self.decode_value(value)
