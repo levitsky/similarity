@@ -62,6 +62,6 @@ class Experiment:
             id(self),
             exc_type.__name__ if exc_type else "Normal exit",
             exc_value if exc_value else "No exception",
-            traceback.format_tb(tb) if tb else "No traceback",
+            "\n".join(traceback.format_tb(tb)) if tb else "No traceback",
         )
         self._cleanup()

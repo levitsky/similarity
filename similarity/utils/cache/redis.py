@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Iterable
 from abc import abstractmethod, ABC
 import numpy as np
 from ..abc import IndexType
+from tqdm import trange
 
 from .common import (
     ByteStringKeyCache,
@@ -79,7 +80,7 @@ class RedisPipeline(RedisAgent):
         return self.parent._key_from_row(row)
 
     def close(self):
-        self._client.execute()
+        self.execute()
 
     def decode_value(self, value: bytes) -> Any:
         return self.parent.decode_value(value)
@@ -90,9 +91,13 @@ class RedisPipeline(RedisAgent):
     def transact_to_cache(self, inputs: DataFrame, predictions: Iterable) -> None:
         return self.write_to_cache(inputs, predictions)
 
+    def execute(self):
+        return self._client.execute()
+
 
 class RedisCache(RedisAgent):
     _client: "redis.Redis"
+    batch_size: int = 50000
 
     def __init__(self, experiment: "Experiment"):
         super().__init__(experiment)
@@ -108,6 +113,29 @@ class RedisCache(RedisAgent):
     def transact_to_cache(self, inputs: "pd.DataFrame", predictions: Iterable) -> None:
         with self.transact() as pipe:
             pipe.write_to_cache(inputs, predictions)
+
+    def fill_from_cache(self, inputs: DataFrame, output: np.ndarray) -> None:
+        # override default behavior to use a pipeline for batch retrieval
+        bsize = self.batch_size
+        nb = (len(inputs) + bsize - 1) // bsize
+        for batch in trange(nb, desc=f"Loading {self.name} from cache", unit="batch"):
+            with self.transact() as pipe:
+                for _, row in inputs.iloc[
+                    batch * bsize : (batch + 1) * bsize
+                ].iterrows():
+                    key = self._key_from_row(row)
+                    pipe._client.get(pipe._full_key(key))
+                results = pipe.execute()
+                logger.debug(
+                    "Retrieved %d items from Redis cache: %s",
+                    len(results),
+                    results[:10],
+                )
+                for i, value in enumerate(results, start=batch * bsize):
+                    if value is not None:
+                        output[i] = self.decode_value(value)
+                    else:
+                        output[i] = np.nan
 
     def close(self):
         self.wait()
