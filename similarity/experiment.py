@@ -1,4 +1,5 @@
 import logging
+import traceback
 from .utils.config import Config
 from .utils.abc import Cache, IndexType
 from .prediction import PredictedSpectrumCollection, MzIrtDataFrame
@@ -42,7 +43,7 @@ class Experiment:
     def __reduce__(self) -> tuple:
         return self.__class__, (self.config,)
 
-    def __cleanup(self):
+    def _cleanup(self):
         MzIrtDataFrame.close(self)
         if PredictedSpectrumCollection.exists(self):
             self.predicted_spectra.close()
@@ -55,5 +56,12 @@ class Experiment:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.__cleanup()
+    def __exit__(self, exc_type, exc_value, tb):
+        logger.debug(
+            "Cleaning up experiment %d. Reason: %s (%s). Traceback: %s",
+            id(self),
+            exc_type.__name__ if exc_type else "Normal exit",
+            exc_value if exc_value else "No exception",
+            traceback.format_tb(tb) if tb else "No traceback",
+        )
+        self._cleanup()

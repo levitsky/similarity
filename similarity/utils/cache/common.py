@@ -61,7 +61,7 @@ class Cache(CacheABC):
         """
         return predictions[self.name].reshape(
             -1
-        )  # default implementation for 1D predictions"
+        )  # default implementation for 1D predictions
 
     @abstractmethod
     def _key_from_row(self, row: "pd.Series") -> Any:

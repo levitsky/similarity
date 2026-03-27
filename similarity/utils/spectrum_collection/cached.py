@@ -22,7 +22,7 @@ class CachedSpectrumCollection(SpectrumCollection):
 
     def __init__(self, experiment: "Experiment"):
         super().__init__(experiment)
-        index = experiment.config.cache.value.get_index(IndexType.INTENSITY, experiment)
+        index = experiment.cache[IndexType.INTENSITY]
         if index is None:
             raise ValueError(
                 "Cache is not configured, cannot use CachedSpectrumCollection"

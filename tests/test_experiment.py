@@ -160,7 +160,7 @@ class ExperimentTest(TestBase):
 class EquivalenceTest(TestBase):
     def setUp(self):
         if joinPeaks is None or nspectraangle is None:
-            self.skipTest(f"MSCI not available.")
+            self.skipTest("MSCI not available.")
         super().setUp()
 
     def test_peak_matching(self):
