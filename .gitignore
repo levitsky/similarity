@@ -10,3 +10,4 @@ cache.db*
 *.log
 ./*.txt
 .stfolder
+data/
