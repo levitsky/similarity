@@ -6,6 +6,8 @@ from enum import Enum
 
 if TYPE_CHECKING:
     from ..experiment import Experiment
+    from .cache.common import SpectrumCache
+    from contextlib import AbstractContextManager
     import pandas as pd
     import numpy as np
     from numpy.typing import NDArray
@@ -61,8 +63,9 @@ class IndexType(Enum):
     CCS = "ccs"
 
 
-class Index(ABC):
-    index_type: dict[IndexType, type["Index"]]
+class Cache(ABC):
+    name: str
+    index_type: dict[IndexType, type["Cache"]]
 
     def __init__(self, experiment: "Experiment"):
         self.experiment = experiment
@@ -106,14 +109,16 @@ class Index(ABC):
         """Fill missing values in inputs from cache."""
         pass
 
-    @abstractmethod
     def get(self, key: Any, default: Any = None) -> Any:
-        pass
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
     @classmethod
     def get_index(
         cls, index_type: IndexType, experiment: "Experiment"
-    ) -> "Index | None":
+    ) -> "Cache | None":
         if (
             index_type in {IndexType.IRT, IndexType.CCS}
             and not experiment.config.cache_conf.cache_properties
@@ -142,7 +147,7 @@ class SpectrumCollection(ABC):
         pass
 
     @abstractmethod
-    def fill_from_cache(self, experiment: "Experiment", index: Index) -> None:
+    def fill_from_cache(self, experiment: "Experiment", index: "SpectrumCache") -> None:
         """Fill missing spectra from cache."""
         pass
 
@@ -175,6 +180,6 @@ class SpectrumCollection(ABC):
 class CacheBasedSpectrumCollection(SpectrumCollection):
     """A SpectrumCollection that just retrieves spectra from cache on demand."""
 
-    def __init__(self, experiment: "Experiment", index: Index):
+    def __init__(self, experiment: "Experiment", index: "SpectrumCache"):
         super().__init__(experiment)
         self.index = index

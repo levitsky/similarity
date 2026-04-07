@@ -104,7 +104,7 @@ class RedisCacheConfig(CacheConfig):
 
 class CacheConfigType(Enum):
     DISKCACHE = DiskCacheConfig
-    # REDIS = RedisCacheConfig
+    REDIS = RedisCacheConfig
 
 
 cache_args: dict[str, list[tuple[CacheConfigType, "Field"]]] = {}
@@ -196,7 +196,7 @@ class Config(BaseConfig):
     def __post_init__(self):
         if self.cache != CacheType.NONE and self.cache_conf is None:
             logger.warning(
-                "cache_conf should be provided when cache is enabled. Using default configuration for {self.cache.name}."
+                f"cache_conf should be provided when cache is enabled. Using default configuration for {self.cache.name}."
             )
             object.__setattr__(
                 self, "cache_conf", CacheConfigType[self.cache.name].value()

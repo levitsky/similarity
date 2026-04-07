@@ -84,7 +84,12 @@ class ExperimentTest(TestBase):
                                 "Skipping combination of CacheType.NONE and SpectrumCollectionType.CACHED because it is not valid."
                             )
                             continue
-                        self.logger.info("Testing Experiment with %d workers", workers)
+                        self.logger.info(
+                            "Testing Experiment with %d workers, %s cache and %s spectrum collection",
+                            workers,
+                            cache_type.name,
+                            spectrum_collection_type.name,
+                        )
                         config = dataclasses.replace(
                             self.config,
                             workers=workers,
@@ -155,7 +160,7 @@ class ExperimentTest(TestBase):
 class EquivalenceTest(TestBase):
     def setUp(self):
         if joinPeaks is None or nspectraangle is None:
-            self.skipTest(f"MSCI not available.")
+            self.skipTest("MSCI not available.")
         super().setUp()
 
     def test_peak_matching(self):

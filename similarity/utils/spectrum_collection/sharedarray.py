@@ -71,18 +71,11 @@ class SharedArraySpectrumCollection(SpectrumCollection):
 
     def fill_from_cache(self, experiment: "Experiment", index: "Index") -> None:
         maxpeaks = experiment.config.max_peaks
-        for i, pep, charge in tqdm(
-            experiment.peptides[
-                ["peptide_sequences", "precursor_charges"]
-            ].itertuples(),
-            total=len(experiment.peptides),
-            desc=f"Loading spectra from cache",
-            unit="spectra",
-            unit_scale=True,
-        ):
-            key = (pep, charge)
-            mz, intensities = index.get(key, (None, None))
-            if mz is not None and intensities is not None:
+        spectra = [[] for _ in range(len(experiment.peptides))]
+        index.fill_from_cache(experiment.peptides, spectra)
+        for i, cached in enumerate(spectra):
+            if cached is not np.nan:
+                mz, intensities = cached
                 len_spectrum = min(len(mz), maxpeaks)
                 if len_spectrum < len(mz):
                     idx = np.argsort(intensities)[-maxpeaks:]

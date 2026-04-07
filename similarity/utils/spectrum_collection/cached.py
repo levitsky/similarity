@@ -5,7 +5,7 @@ import numpy as np
 from ..abc import SpectrumCollection, IndexType
 
 if TYPE_CHECKING:
-    from ..abc import Index
+    from ..cache.common import SpectrumCache
     from ...experiment import Experiment
     from numpy.typing import NDArray
     import numpy as np
@@ -17,12 +17,12 @@ logger = logging.getLogger(__name__)
 class CachedSpectrumCollection(SpectrumCollection):
     """A SpectrumCollection that caches predictions to disk using a configurable cache backend."""
 
-    index: "Index"
+    index: "SpectrumCache"
     batch_factor: int = 10
 
     def __init__(self, experiment: "Experiment"):
         super().__init__(experiment)
-        index = experiment.config.cache.value.get_index(IndexType.INTENSITY, experiment)
+        index = experiment.cache[IndexType.INTENSITY]
         if index is None:
             raise ValueError(
                 "Cache is not configured, cannot use CachedSpectrumCollection"
@@ -40,7 +40,7 @@ class CachedSpectrumCollection(SpectrumCollection):
     ) -> tuple["NDArray[np.float32]", "NDArray[np.float32]"]:
         return self.index[self._index_key(key)]
 
-    def fill_from_cache(self, experiment: "Experiment", index: "Index") -> None:
+    def fill_from_cache(self, experiment: "Experiment", index: "SpectrumCache") -> None:
         """Nothing to do because all spectra are loaded on demand from cache."""
         pass
 
