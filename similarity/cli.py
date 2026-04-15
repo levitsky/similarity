@@ -57,7 +57,7 @@ def parse_args(
         "verbose",
         "output_file",
         "peptide_file",
-        "load_peptide_file",
+        "load_peptide_table",
         "array_file",
         "log_file",
     ]:
@@ -120,7 +120,7 @@ def experiment() -> None:
     )
     peptides.add_argument(
         "-lp",
-        "--load-peptide-file",
+        "--load-peptide-table",
         nargs="?",
         type=Path,
         help="Load an existing peptide table",
@@ -135,7 +135,7 @@ def experiment() -> None:
     args, kw, logger = parse_args(p)
 
     config = Config(**kw)
-    with Experiment(config, peptide_table=args.load_peptide_file) as exp:
+    with Experiment(config, peptide_table=args.load_peptide_table) as exp:
         if args.output_file:
             exp.score_df.to_csv(args.output_file, index=False, sep="\t")
             logger.info("Saved results to %s", args.output_file)
