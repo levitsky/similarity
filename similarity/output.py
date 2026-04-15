@@ -16,11 +16,13 @@ class ScoresDataFrame(Fixture):
         df["peptide 1"] = (
             df["i"]
             .apply(lambda i: peptides.loc[i, "peptide_sequences"])
+            .astype(bytes)
             .str.decode("ascii")
         )
         df["peptide 2"] = (
             df["j"]
             .apply(lambda j: peptides.loc[j, "peptide_sequences"])
+            .astype(bytes)
             .str.decode("ascii")
         )
         df["charge 1"] = df["i"].apply(lambda i: peptides.loc[i, "precursor_charges"])

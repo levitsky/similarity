@@ -99,13 +99,13 @@ class GroupingWorker(ExperimentWorker):
     def score_pair(self, i: int, j: int) -> float:
         mz1, intensities1 = self.spectra[i]
         mz2, intensities2 = self.spectra[j]
-        idx1, idx2 = GroupingWorker.match_peaks(
+        idx1, idx2 = self.match_peaks(
             mz1,
             mz2,
             atol=self.config.peak_tolerance,
             rtol=self.config.peak_ppm / 1e6,
         )
-        return GroupingWorker.similarity_score(intensities1, intensities2, idx1, idx2)
+        return self.similarity_score(intensities1, intensities2, idx1, idx2)
 
     @staticmethod
     def encode_result(i: int, matches: list[int], scores: list[float]) -> tuple:
