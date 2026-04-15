@@ -126,7 +126,9 @@ def experiment() -> None:
             logger.info("Saved results to %s", args.output_file)
 
         if args.peptide_file:
-            exp.peptides.to_csv(args.peptide_file, index=False, sep="\t")
+            df = exp.peptides
+            df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
+            df.to_csv(args.peptide_file, index=False, sep="\t")
             logger.info("Saved peptide table to %s", args.peptide_file)
 
         if args.array_file:

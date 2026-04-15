@@ -3,8 +3,10 @@ import numpy as np
 import multiprocessing as mp
 import pandas as pd
 import dataclasses
+import tempfile
 from similarity.experiment import Experiment
 from similarity.grouping import GroupingWorker
+from similarity.prediction import MzIrtDataFrame
 from similarity.utils.config import (
     Config,
     KoinaIntensityModel,
@@ -65,6 +67,88 @@ class TestBase(unittest.TestCase):
 
 
 class ExperimentTest(TestBase):
+    def test_load_peptide_table(self):
+        source = pd.DataFrame(
+            {
+                "peptide_sequences": ["PEPTIDE", "ACDEFGHIK"],
+                "precursor_charges": [2, 3],
+                "irt": [10.5, 20.25],
+                "m/z": [500.123, 620.456],
+                "collision_energies": [30.0, 30.0],
+                "fragmentation_types": ["HCD", "HCD"],
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            peptide_file = Path(tmpdir) / "peptides.tsv"
+            source.to_csv(peptide_file, index=False, sep="\t")
+            with Experiment(self.config) as exp:
+                loaded = MzIrtDataFrame().load_peptide_table(peptide_file, exp)
+                self.assertEqual(list(loaded.columns), list(source.columns))
+
+                seq = loaded["peptide_sequences"].to_numpy(copy=False)
+                self.assertEqual(seq.dtype.kind, "S")
+                self.assertEqual(
+                    [x.decode("ascii") for x in seq],
+                    source["peptide_sequences"].tolist(),
+                )
+                self.assertTrue(
+                    np.array_equal(
+                        loaded["precursor_charges"].to_numpy(copy=False),
+                        source["precursor_charges"].to_numpy(copy=False),
+                    )
+                )
+                self.assertTrue(
+                    np.allclose(loaded["irt"].to_numpy(copy=False), source["irt"])
+                )
+                self.assertTrue(
+                    np.allclose(loaded["m/z"].to_numpy(copy=False), source["m/z"])
+                )
+
+                shm = MzIrtDataFrame._shared_memory[exp]
+                shm_seq = np.ndarray(
+                    shape=(2,), dtype=seq.dtype, buffer=shm["peptide_sequences"].buf
+                )
+                shm_charge = np.ndarray(
+                    shape=(2,), dtype=np.uint8, buffer=shm["precursor_charges"].buf
+                )
+                shm_mzrt = np.ndarray(
+                    shape=(2, 2), dtype=np.float32, buffer=shm["mzrt"].buf
+                )
+
+                self.assertTrue(np.array_equal(shm_seq, seq))
+                self.assertTrue(
+                    np.array_equal(
+                        shm_charge, loaded["precursor_charges"].to_numpy(copy=False)
+                    )
+                )
+                self.assertTrue(
+                    np.array_equal(shm_mzrt[:, 0], loaded["m/z"].to_numpy(copy=False))
+                )
+                self.assertTrue(
+                    np.array_equal(shm_mzrt[:, 1], loaded["irt"].to_numpy(copy=False))
+                )
+
+    def test_load_peptide_table_with_ccs(self):
+        config = dataclasses.replace(self.config, model_ccs=KoinaCCSModel.IM2Deep)
+        source = pd.DataFrame(
+            {
+                "peptide_sequences": ["PEPTIDE", "ACDEFGHIK"],
+                "precursor_charges": [2, 3],
+                "irt": [10.5, 20.25],
+                "m/z": [500.123, 620.456],
+                "ccs": [255.1, 278.2],
+                "collision_energies": [30.0, 30.0],
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            peptide_file = Path(tmpdir) / "peptides_ccs.tsv"
+            source.to_csv(peptide_file, index=False, sep="\t")
+            with Experiment(config) as exp:
+                loaded = MzIrtDataFrame().load_peptide_table(peptide_file, exp)
+                self.assertTrue(
+                    np.allclose(loaded["ccs"].to_numpy(copy=False), source["ccs"])
+                )
+
     def test_run(self):
         """Test that Experiment executes and returns something."""
         for workers in [1, 5]:
@@ -121,6 +205,39 @@ class ExperimentTest(TestBase):
                                     atol=1e-3,
                                 )
                             )
+
+    def test_save_and_load_peptide_table(self):
+        """Test that the peptide table can be saved and loaded correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            peptide_file = Path(tmpdir) / "peptides.tsv"
+            with Experiment(self.config) as exp:
+                df = exp.peptides
+                df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
+                df.to_csv(peptide_file, index=False, sep="\t")
+                self.logger.info("Saved peptide table to %s", peptide_file)
+
+                with Experiment(self.config, peptide_table=peptide_file) as exp_copy:
+                    loaded = exp_copy.peptides
+                    self.assertEqual(list(loaded.columns), list(df.columns))
+
+                    seq = loaded["peptide_sequences"].to_numpy(copy=False)
+                    self.assertEqual(seq.dtype.kind, "S")
+                    self.assertEqual(
+                        [x.decode("ascii") for x in seq],
+                        df["peptide_sequences"].tolist(),
+                    )
+                    self.assertTrue(
+                        np.array_equal(
+                            loaded["precursor_charges"].to_numpy(copy=False),
+                            df["precursor_charges"].to_numpy(copy=False),
+                        )
+                    )
+                    self.assertTrue(
+                        np.allclose(loaded["irt"].to_numpy(copy=False), df["irt"])
+                    )
+                    self.assertTrue(
+                        np.allclose(loaded["m/z"].to_numpy(copy=False), df["m/z"])
+                    )
 
     def test_multiple_charges(self):
         config = dataclasses.replace(self.config, max_charge=3)
