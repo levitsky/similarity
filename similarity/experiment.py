@@ -5,7 +5,7 @@ from .utils.abc import Cache, IndexType
 from .prediction import PredictedSpectrumCollection, MzIrtDataFrame
 from .grouping import SpectrumGrouping
 from .output import ScoresDataFrame
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -17,16 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 class Experiment:
-    if TYPE_CHECKING:
-        peptides: "pd.DataFrame"
-        predicted_spectra: "SpectrumCollection"
-        score_array: "np.ndarray"
-        score_df: "pd.DataFrame"
-    else:
-        peptides = MzIrtDataFrame()
-        predicted_spectra = PredictedSpectrumCollection()
-        score_array = SpectrumGrouping()
-        score_df = ScoresDataFrame()
+    peptides = cast("pd.DataFrame", MzIrtDataFrame())
+    predicted_spectra = cast("SpectrumCollection", PredictedSpectrumCollection())
+    score_array = cast("np.ndarray", SpectrumGrouping())
+    score_df = cast("pd.DataFrame", ScoresDataFrame())
 
     def __init__(self, config: Config):
         self.config = config
