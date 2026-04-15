@@ -53,7 +53,14 @@ def parse_args(
     logger = setup_logging(args)
     logger.debug("Parsed arguments: %s", args)
     kw = vars(args).copy()
-    for key in ["verbose", "output_file", "peptide_file", "array_file", "log_file"]:
+    for key in [
+        "verbose",
+        "output_file",
+        "peptide_file",
+        "load_peptide_table",
+        "array_file",
+        "log_file",
+    ]:
         kw.pop(key, None)
     logger.debug("Registered cache configuration arguments: %s", cache_args)
 
@@ -103,12 +110,20 @@ def experiment() -> None:
     p.add_argument(
         "-o", "--output-file", nargs="?", type=Path, help="Path to output TSV file"
     )
-    p.add_argument(
+    peptides = p.add_mutually_exclusive_group()
+    peptides.add_argument(
         "-p",
         "--peptide-file",
         nargs="?",
         type=Path,
         help="Path to output peptide table",
+    )
+    peptides.add_argument(
+        "-lp",
+        "--load-peptide-table",
+        nargs="?",
+        type=Path,
+        help="Load an existing peptide table",
     )
     p.add_argument(
         "-a",
@@ -120,13 +135,15 @@ def experiment() -> None:
     args, kw, logger = parse_args(p)
 
     config = Config(**kw)
-    with Experiment(config) as exp:
+    with Experiment(config, peptide_table=args.load_peptide_table) as exp:
         if args.output_file:
             exp.score_df.to_csv(args.output_file, index=False, sep="\t")
             logger.info("Saved results to %s", args.output_file)
 
         if args.peptide_file:
-            exp.peptides.to_csv(args.peptide_file, index=False, sep="\t")
+            df = exp.peptides
+            df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
+            df.to_csv(args.peptide_file, index=False, sep="\t")
             logger.info("Saved peptide table to %s", args.peptide_file)
 
         if args.array_file:

@@ -10,6 +10,7 @@ from tqdm import trange
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 if TYPE_CHECKING:
+    from pathlib import Path
     import numpy as np
     from numpy.typing import DTypeLike
     from .experiment import Experiment
@@ -185,7 +186,61 @@ class MzIrtDataFrame(Fixture):
             shm_dict[name] = shm
         return np.ndarray(shape, dtype=dtype, buffer=shm.buf)
 
+    def load_peptide_table(
+        self, fpath: "str | Path", experiment: "Experiment"
+    ) -> pd.DataFrame:
+        """Load peptide table from previously saved file into shared memory."""
+        df = pd.read_csv(fpath, sep="\t")
+        required_columns = {"peptide_sequences", "precursor_charges", "irt", "m/z"}
+        if experiment.config.model_ccs is not None:
+            required_columns.add("ccs")
+        missing = required_columns - set(df.columns)
+        if missing:
+            raise ValueError(
+                f"Missing required columns in peptide table {fpath}: {sorted(missing)}"
+            )
+
+        if df["peptide_sequences"].isna().any():
+            raise ValueError("Column peptide_sequences contains missing values")
+
+        seq = np.char.encode(
+            df["peptide_sequences"].to_numpy(dtype=str, copy=False), "ascii"
+        )
+        seq_array = self.shared_array(
+            experiment,
+            "peptide_sequences",
+            shape=(df.shape[0],),
+            dtype=seq.dtype,
+        )
+        seq_array[:] = seq
+        df["peptide_sequences"] = seq_array
+
+        charge_array = self.shared_array(
+            experiment,
+            "precursor_charges",
+            shape=(df.shape[0],),
+            dtype=np.uint8,
+        )
+        charge_array[:] = df["precursor_charges"].to_numpy(dtype=np.uint8, copy=False)
+        df["precursor_charges"] = charge_array
+
+        mzrt_shape = (df.shape[0], 3 if experiment.config.model_ccs is not None else 2)
+        mzrt = self.shared_array(experiment, "mzrt", shape=mzrt_shape, dtype=np.float32)
+        mzrt[:, 0] = df["m/z"].to_numpy(copy=False)
+        mzrt[:, 1] = df["irt"].to_numpy(copy=False)
+        df["m/z"] = mzrt[:, 0]
+        df["irt"] = mzrt[:, 1]
+
+        if experiment.config.model_ccs is not None:
+            mzrt[:, 2] = df["ccs"].to_numpy(copy=False)
+            df["ccs"] = mzrt[:, 2]
+
+        return df
+
     def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
+        if experiment.peptide_table is not None:
+            logger.info("Loading peptide table from %s", experiment.peptide_table)
+            return self.load_peptide_table(experiment.peptide_table, experiment)
         input_file = experiment.config.input_file
         seq = np.unique(np.loadtxt(input_file, dtype=bytes))
 

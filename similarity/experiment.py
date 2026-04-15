@@ -8,6 +8,7 @@ from .output import ScoresDataFrame
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
+    from pathlib import Path
     import pandas as pd
     import numpy as np
     from .utils.abc import SpectrumCollection, Cache
@@ -22,7 +23,7 @@ class Experiment:
     score_array = cast("np.ndarray", SpectrumGrouping())
     score_df = cast("pd.DataFrame", ScoresDataFrame())
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, peptide_table: "Path | str | None" = None):
         self.config = config
         self.cache: dict[IndexType, "Cache | None"] = {
             index_type: config.cache.value.get_index(index_type, self)
@@ -33,9 +34,10 @@ class Experiment:
             id(self),
             self.cache,
         )
+        self.peptide_table = peptide_table
 
     def __reduce__(self) -> tuple:
-        return self.__class__, (self.config,)
+        return self.__class__, (self.config, self.peptide_table)
 
     def _cleanup(self):
         MzIrtDataFrame.close(self)
