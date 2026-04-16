@@ -7,7 +7,7 @@ from enum import EnumType, Enum, auto
 from .cache import CacheType
 from .spectrum_collection import SpectrumCollectionType
 from abc import ABC
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, get_origin, get_args
 import logging
 
 if TYPE_CHECKING:
@@ -63,6 +63,9 @@ class BaseConfig(ABC):
             kw["type"] = (
                 None  # argparse doesn't support optional Enums, so we have to handle None as a special case
             )
+        elif get_origin(kw.get("type")) is list and get_args(kw.get("type")) == (str,):
+            kw["type"] = str
+            kw["nargs"] = "*" if field.default is None else "+"
         return name, kw
 
     @classmethod
@@ -184,6 +187,8 @@ class Config(BaseConfig):
     ccs_rtolerance: float = 0.02
     nonstandard_aminoacids: bool = False
     ptms: bool = False
+    fixed_mods: list[str] | None = None
+    variable_mods: list[str] | None = None
     koina_host: str = "koina.wilhelmlab.org:443"
     cache: CacheType = CacheType.NONE
     cache_conf: CacheConfigType | None = None
