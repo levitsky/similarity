@@ -255,8 +255,24 @@ class MzIrtDataFrame(Fixture):
             logger.info(
                 "Expanding peptide sequences with variable and fixed modifications"
             )
-            logger.debug("Variable modifications: %s", experiment.config.variable_mods)
-            logger.debug("Fixed modifications: %s", experiment.config.fixed_mods)
+            variable_rules = [
+                proforma.TagParser(item)()[0]
+                for item in (experiment.config.variable_mods or [])
+            ]
+            fixed_rules = [
+                proforma.TagParser(item)()[0]
+                for item in (experiment.config.fixed_mods or [])
+            ]
+            logger.debug(
+                "Variable modifications %s parsed as %s",
+                experiment.config.variable_mods,
+                variable_rules,
+            )
+            logger.debug(
+                "Fixed modifications %s parsed as %s",
+                experiment.config.fixed_mods,
+                fixed_rules,
+            )
             expanded = []
             for peptide in seq:
                 peptide = peptide.decode("ascii")
@@ -269,14 +285,14 @@ class MzIrtDataFrame(Fixture):
                     continue
                 for peptidoform in proforma.proteoforms(
                     base,
-                    fixed_modifications=experiment.config.fixed_mods,
-                    variable_modifications=experiment.config.variable_mods,
+                    fixed_modifications=fixed_rules,
+                    variable_modifications=variable_rules,
                     include_unmodified=True,
                     expand_rules=True,
                     strip=True,
                 ):
                     sequence = str(peptidoform)
-                    logger.debug("Expanded peptide %s to %s", peptide, sequence)
+                    # logger.debug("Expanded peptide %s to %s", peptide, sequence)
                     expanded.append(sequence.encode("ascii"))
             seq = np.array(expanded, dtype=bytes)
             logger.info(
