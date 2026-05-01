@@ -92,11 +92,15 @@ class Cache(CacheABC):
             self._saving_thread.start()
         self._save_queue.put((inputs, predictions))
 
-    def fill_from_cache(self, inputs: "pd.DataFrame", output: "np.ndarray") -> None:
+    def fill_from_cache(
+        self, inputs: "pd.DataFrame", output: "np.ndarray | list"
+    ) -> None:
         if len(self) < len(inputs) / 2:
             logger.info(
                 "Cache size too small, skipping cache loading for %s", self.name
             )
+            for i in range(len(inputs)):
+                output[i] = np.nan
             return
         for i, (_, row) in tqdm(
             enumerate(inputs.iterrows()),
