@@ -26,8 +26,11 @@ class PredictedSpectrumCollection(Fixture):
     def preprocess_predictions(
         result: dict[str, list["np.ndarray"]],
     ) -> dict[str, list["np.ndarray"]]:
-        for arr in result["intensities"]:
-            np.sqrt(arr, out=arr, where=arr > 0)
+        for mz, intensities in zip(result["mz"], result["intensities"]):
+            np.sqrt(intensities, out=intensities, where=intensities > 0)
+            order = np.argsort(mz, kind="mergesort")
+            mz[:] = mz[order]
+            intensities[:] = intensities[order]
         return result
 
     def evaluate(self, experiment: "Experiment") -> "SpectrumCollection":

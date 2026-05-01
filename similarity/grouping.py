@@ -7,7 +7,7 @@ import multiprocessing as mp
 from .utils.abc import Fixture
 from .utils.utils import ExperimentWorker
 from .prediction import MzIrtDataFrame
-
+from ._match_peaks import match_peaks_sorted
 
 if TYPE_CHECKING:
     from .experiment import Experiment, Config
@@ -67,14 +67,7 @@ class GroupingWorker(ExperimentWorker):
 
     @staticmethod
     def match_peaks(mz1: np.ndarray, mz2: np.ndarray, atol: float, rtol: float):
-        mask = np.isclose(
-            mz1[:, None],
-            mz2[None, :],
-            rtol=rtol,
-            atol=atol,
-        )
-        idx1, idx2 = np.where(mask)
-        return idx1, idx2
+        return match_peaks_sorted(mz1, mz2, atol, rtol)
 
     @staticmethod
     def similarity_score(

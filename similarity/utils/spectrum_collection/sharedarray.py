@@ -15,6 +15,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _truncate_and_sort_spectrum(
+    mz: "NDArray[np.float32]", intensities: "NDArray[np.float32]", maxpeaks: int
+) -> tuple["NDArray[np.float32]", "NDArray[np.float32]"]:
+    if mz.size > maxpeaks:
+        idx = np.argpartition(intensities, -maxpeaks)[-maxpeaks:]
+        mz = mz[idx]
+        intensities = intensities[idx]
+    order = np.argsort(mz, kind="mergesort")
+    return mz[order], intensities[order]
+
+
 class SharedArraySpectrumCollection(SpectrumCollection):
     """A SpectrumCollection that keeps predicted spectra in a 3D array in shared memory."""
 
@@ -76,11 +87,8 @@ class SharedArraySpectrumCollection(SpectrumCollection):
         for i, cached in enumerate(spectra):
             if cached is not np.nan:
                 mz, intensities = cached
-                len_spectrum = min(len(mz), maxpeaks)
-                if len_spectrum < len(mz):
-                    idx = np.argsort(intensities)[-maxpeaks:]
-                    mz = mz[idx]
-                    intensities = intensities[idx]
+                mz, intensities = _truncate_and_sort_spectrum(mz, intensities, maxpeaks)
+                len_spectrum = len(mz)
                 self.array[i, 0, :len_spectrum] = mz
                 self.array[i, 1, :len_spectrum] = intensities
 
@@ -91,11 +99,8 @@ class SharedArraySpectrumCollection(SpectrumCollection):
         for iloc, loc in enumerate(inputs.index):
             mz = predictions["mz"][iloc]
             intensities = predictions["intensities"][iloc]
-            len_spectrum = min(len(mz), maxpeaks)
-            if len_spectrum < len(mz):
-                idx = np.argsort(intensities)[-maxpeaks:]
-                mz = mz[idx]
-                intensities = intensities[idx]
+            mz, intensities = _truncate_and_sort_spectrum(mz, intensities, maxpeaks)
+            len_spectrum = len(mz)
             self.array[loc, 0, :len_spectrum] = mz
             self.array[loc, 1, :len_spectrum] = intensities
 
