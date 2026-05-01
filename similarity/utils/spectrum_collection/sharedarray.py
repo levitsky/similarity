@@ -15,17 +15,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _truncate_and_sort_spectrum(
-    mz: "NDArray[np.float32]", intensities: "NDArray[np.float32]", maxpeaks: int
-) -> tuple["NDArray[np.float32]", "NDArray[np.float32]"]:
-    if mz.size > maxpeaks:
-        idx = np.argpartition(intensities, -maxpeaks)[-maxpeaks:]
-        mz = mz[idx]
-        intensities = intensities[idx]
-    order = np.argsort(mz, kind="mergesort")
-    return mz[order], intensities[order]
-
-
 class SharedArraySpectrumCollection(SpectrumCollection):
     """A SpectrumCollection that keeps predicted spectra in a 3D array in shared memory."""
 
@@ -81,13 +70,12 @@ class SharedArraySpectrumCollection(SpectrumCollection):
         )
 
     def fill_from_cache(self, experiment: "Experiment", index: "Index") -> None:
-        maxpeaks = experiment.config.max_peaks
         spectra = [[] for _ in range(len(experiment.peptides))]
         index.fill_from_cache(experiment.peptides, spectra)
         for i, cached in enumerate(spectra):
             if cached is not np.nan:
                 mz, intensities = cached
-                mz, intensities = _truncate_and_sort_spectrum(mz, intensities, maxpeaks)
+                mz, intensities = self._truncate_and_sort_spectrum(mz, intensities)
                 len_spectrum = len(mz)
                 self.array[i, 0, :len_spectrum] = mz
                 self.array[i, 1, :len_spectrum] = intensities
@@ -95,11 +83,10 @@ class SharedArraySpectrumCollection(SpectrumCollection):
     def fill_from_predictions(
         self, inputs: DataFrame, predictions: dict[str, list["np.ndarray"]]
     ) -> None:
-        maxpeaks = self.experiment.config.max_peaks
         for iloc, loc in enumerate(inputs.index):
             mz = predictions["mz"][iloc]
             intensities = predictions["intensities"][iloc]
-            mz, intensities = _truncate_and_sort_spectrum(mz, intensities, maxpeaks)
+            mz, intensities = self._truncate_and_sort_spectrum(mz, intensities)
             len_spectrum = len(mz)
             self.array[loc, 0, :len_spectrum] = mz
             self.array[loc, 1, :len_spectrum] = intensities

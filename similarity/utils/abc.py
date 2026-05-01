@@ -3,13 +3,12 @@ import logging
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
 from enum import Enum
+import numpy as np
 
 if TYPE_CHECKING:
     from ..experiment import Experiment
     from .cache.common import SpectrumCache
-    from contextlib import AbstractContextManager
     import pandas as pd
-    import numpy as np
     from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
@@ -175,6 +174,17 @@ class SpectrumCollection(ABC):
     def worker_close(self):
         """Close any resources used by worker processes, such as database connections."""
         pass
+
+    def _truncate_and_sort_spectrum(
+        self, mz: "NDArray[np.float32]", intensities: "NDArray[np.float32]"
+    ) -> tuple["NDArray[np.float32]", "NDArray[np.float32]"]:
+        maxpeaks = self.experiment.config.max_peaks
+        if mz.size > maxpeaks:
+            idx = np.argpartition(intensities, -maxpeaks)[-maxpeaks:]
+            mz = mz[idx]
+            intensities = intensities[idx]
+        order = np.argsort(mz, kind="mergesort")
+        return mz[order], intensities[order]
 
 
 class CacheBasedSpectrumCollection(SpectrumCollection):
