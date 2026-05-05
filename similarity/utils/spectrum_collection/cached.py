@@ -38,7 +38,8 @@ class CachedSpectrumCollection(SpectrumCollection):
     def __getitem__(
         self, key: int
     ) -> tuple["NDArray[np.float32]", "NDArray[np.float32]"]:
-        return self.index[self._index_key(key)]
+        mz, intensities = self.index[self._index_key(key)]
+        return self._truncate_and_sort_spectrum(mz, intensities)
 
     def fill_from_cache(self, experiment: "Experiment", index: "SpectrumCache") -> None:
         """Nothing to do because all spectra are loaded on demand from cache."""

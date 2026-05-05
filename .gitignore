@@ -10,4 +10,5 @@ cache.db*
 *.log
 *.txt
 .stfolder
+*.so
 data/

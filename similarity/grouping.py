@@ -1,5 +1,5 @@
 import math
-from typing import Iterable, TYPE_CHECKING, Any
+from typing import Iterable, TYPE_CHECKING
 from scipy.spatial import cKDTree
 import numpy as np
 import logging
@@ -7,7 +7,7 @@ import multiprocessing as mp
 from .utils.abc import Fixture
 from .utils.utils import ExperimentWorker
 from .prediction import MzIrtDataFrame
-
+from ._match_peaks import match_peaks_sorted, similarity_score as c_similarity_score
 
 if TYPE_CHECKING:
     from .experiment import Experiment, Config
@@ -67,14 +67,7 @@ class GroupingWorker(ExperimentWorker):
 
     @staticmethod
     def match_peaks(mz1: np.ndarray, mz2: np.ndarray, atol: float, rtol: float):
-        mask = np.isclose(
-            mz1[:, None],
-            mz2[None, :],
-            rtol=rtol,
-            atol=atol,
-        )
-        idx1, idx2 = np.where(mask)
-        return idx1, idx2
+        return match_peaks_sorted(mz1, mz2, atol, rtol)
 
     @staticmethod
     def similarity_score(
@@ -83,18 +76,7 @@ class GroupingWorker(ExperimentWorker):
         idx1: np.ndarray,
         idx2: np.ndarray,
     ) -> float:
-        wx = intensities1[idx1]  # sqrt was applied in preprocess_predictions
-        wy = intensities2[idx2]
-        # the numerator only has matching peaks intensities,
-        # but the denominator has the sum of all intensities
-        num = np.sum(wx * wy) ** 2
-        denom1 = np.sum(intensities1**2)
-        denom2 = np.sum(intensities2**2)
-
-        ndotproduct = num / denom1 / denom2
-        score = 1 - 2 * np.arccos(ndotproduct) / np.pi
-
-        return score
+        return c_similarity_score(intensities1, intensities2, idx1, idx2)
 
     def score_pair(self, i: int, j: int) -> float:
         mz1, intensities1 = self.spectra[i]

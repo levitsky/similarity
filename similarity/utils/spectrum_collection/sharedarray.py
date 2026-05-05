@@ -70,32 +70,24 @@ class SharedArraySpectrumCollection(SpectrumCollection):
         )
 
     def fill_from_cache(self, experiment: "Experiment", index: "Index") -> None:
-        maxpeaks = experiment.config.max_peaks
         spectra = [[] for _ in range(len(experiment.peptides))]
         index.fill_from_cache(experiment.peptides, spectra)
         for i, cached in enumerate(spectra):
             if cached is not np.nan:
                 mz, intensities = cached
-                len_spectrum = min(len(mz), maxpeaks)
-                if len_spectrum < len(mz):
-                    idx = np.argsort(intensities)[-maxpeaks:]
-                    mz = mz[idx]
-                    intensities = intensities[idx]
+                mz, intensities = self._truncate_and_sort_spectrum(mz, intensities)
+                len_spectrum = len(mz)
                 self.array[i, 0, :len_spectrum] = mz
                 self.array[i, 1, :len_spectrum] = intensities
 
     def fill_from_predictions(
         self, inputs: DataFrame, predictions: dict[str, list["np.ndarray"]]
     ) -> None:
-        maxpeaks = self.experiment.config.max_peaks
         for iloc, loc in enumerate(inputs.index):
             mz = predictions["mz"][iloc]
             intensities = predictions["intensities"][iloc]
-            len_spectrum = min(len(mz), maxpeaks)
-            if len_spectrum < len(mz):
-                idx = np.argsort(intensities)[-maxpeaks:]
-                mz = mz[idx]
-                intensities = intensities[idx]
+            mz, intensities = self._truncate_and_sort_spectrum(mz, intensities)
+            len_spectrum = len(mz)
             self.array[loc, 0, :len_spectrum] = mz
             self.array[loc, 1, :len_spectrum] = intensities
 
