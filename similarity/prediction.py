@@ -246,7 +246,61 @@ class MzIrtDataFrame(Fixture):
 
         logger.info("Loaded %d unique peptide sequences from %s", len(seq), input_file)
 
-        if not experiment.config.nonstandard_aminoacids and not experiment.config.ptms:
+        ptms = (
+            experiment.config.ptms
+            or experiment.config.variable_mods
+            or experiment.config.fixed_mods
+        )
+        if experiment.config.variable_mods or experiment.config.fixed_mods:
+            logger.info(
+                "Expanding peptide sequences with variable and fixed modifications"
+            )
+            variable_rules = [
+                proforma.TagParser(item)()[0]
+                for item in (experiment.config.variable_mods or [])
+            ]
+            fixed_rules = [
+                proforma.TagParser(item)()[0]
+                for item in (experiment.config.fixed_mods or [])
+            ]
+            logger.debug(
+                "Variable modifications %s parsed as %s",
+                experiment.config.variable_mods,
+                variable_rules,
+            )
+            logger.debug(
+                "Fixed modifications %s parsed as %s",
+                experiment.config.fixed_mods,
+                fixed_rules,
+            )
+            expanded = []
+            for peptide in seq:
+                peptide = peptide.decode("ascii")
+                try:
+                    base = proforma.ProForma.parse(peptide)
+                except aux.PyteomicsError as e:
+                    logger.error(
+                        "Failed to parse peptide sequence %s: %s", peptide, str(e)
+                    )
+                    continue
+                for peptidoform in proforma.proteoforms(
+                    base,
+                    fixed_modifications=fixed_rules,
+                    variable_modifications=variable_rules,
+                    include_unmodified=True,
+                    expand_rules=True,
+                    strip=True,
+                ):
+                    sequence = str(peptidoform)
+                    # logger.debug("Expanded peptide %s to %s", peptide, sequence)
+                    expanded.append(sequence.encode("ascii"))
+            seq = np.array(expanded, dtype=bytes)
+            logger.info(
+                "Expanded to %d peptide sequences after applying modifications",
+                len(seq),
+            )
+
+        if not experiment.config.nonstandard_aminoacids and not ptms:
             common_aa = set(map(lambda s: bytes(s, "ascii")[0], parser.std_amino_acids))
             unsupported = np.array([bool(set(s) - common_aa) for s in seq])
             logger.debug("Unsupported mask:\n%s", unsupported[:10])
@@ -340,7 +394,7 @@ class MzIrtDataFrame(Fixture):
             )
             peptide_data["ccs"] = mzrt[:, 2]
 
-        if experiment.config.ptms:
+        if ptms:
             for i, (peptide, charge) in enumerate(
                 zip(
                     peptide_data["peptide_sequences"], peptide_data["precursor_charges"]
