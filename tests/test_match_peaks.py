@@ -18,6 +18,21 @@ def dense_match_peaks(mz1: np.ndarray, mz2: np.ndarray, atol: float, rtol: float
     return np.where(mask)
 
 
+def python_similarity_score(
+    intensities1: np.ndarray,
+    intensities2: np.ndarray,
+    idx1: np.ndarray,
+    idx2: np.ndarray,
+) -> float:
+    wx = intensities1[idx1]
+    wy = intensities2[idx2]
+    num = np.sum(wx * wy) ** 2
+    denom1 = np.sum(intensities1**2)
+    denom2 = np.sum(intensities2**2)
+    ndotproduct = np.clip(num / denom1 / denom2, -1.0, 1.0)
+    return 1 - 2 * np.arccos(ndotproduct) / np.pi
+
+
 class FakeSpectrumIndex:
     def __init__(self, spectra):
         self.spectra = spectra
@@ -79,6 +94,33 @@ class MatchPeaksTest(unittest.TestCase):
                 actual = GroupingWorker.match_peaks(mz1, mz2, atol, rtol)
                 np.testing.assert_array_equal(actual[0], expected[0])
                 np.testing.assert_array_equal(actual[1], expected[1])
+
+    def test_similarity_score_matches_python_reference(self):
+        rng = np.random.default_rng(123)
+        for _ in range(50):
+            mz1 = np.sort(rng.uniform(100.0, 1500.0, size=64).astype(np.float32))
+            mz2 = np.sort(rng.uniform(100.0, 1500.0, size=80).astype(np.float32))
+            intensities1 = np.sqrt(rng.uniform(1e-5, 1.0, size=64)).astype(np.float32)
+            intensities2 = np.sqrt(rng.uniform(1e-5, 1.0, size=80)).astype(np.float32)
+            idx1, idx2 = GroupingWorker.match_peaks(mz1, mz2, 0.02, 20e-6)
+
+            expected = python_similarity_score(intensities1, intensities2, idx1, idx2)
+            actual = GroupingWorker.similarity_score(
+                intensities1, intensities2, idx1, idx2
+            )
+            self.assertAlmostEqual(actual, expected, places=6)
+
+    def test_similarity_score_matches_python_reference_with_duplicate_matches(self):
+        intensities1 = np.array([0.2, 0.3, 0.4, 0.5], dtype=np.float32)
+        intensities2 = np.array([0.1, 0.2, 0.7], dtype=np.float32)
+        idx1 = np.array([0, 1, 1, 2, 3], dtype=np.intp)
+        idx2 = np.array([1, 0, 1, 1, 2], dtype=np.intp)
+
+        expected = python_similarity_score(intensities1, intensities2, idx1, idx2)
+        actual = GroupingWorker.similarity_score(intensities1, intensities2, idx1, idx2)
+        self.assertTrue(np.isfinite(expected))
+        self.assertTrue(np.isfinite(actual))
+        self.assertAlmostEqual(actual, expected, places=6)
 
     def test_preprocess_predictions_sorts_mz_and_intensities_together(self):
         result = {
