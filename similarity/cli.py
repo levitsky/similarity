@@ -116,7 +116,7 @@ def experiment() -> None:
         "--peptide-file",
         nargs="?",
         type=Path,
-        help="Path to output peptide table",
+        help="Path to save the peptide table",
     )
     peptides.add_argument(
         "-lp",
@@ -136,15 +136,15 @@ def experiment() -> None:
 
     config = Config(**kw)
     with Experiment(config, peptide_table=args.load_peptide_table) as exp:
-        if args.output_file:
-            exp.score_df.to_csv(args.output_file, index=False, sep="\t")
-            logger.info("Saved results to %s", args.output_file)
-
         if args.peptide_file:
             df = exp.peptides
             df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
             df.to_csv(args.peptide_file, index=False, sep="\t")
             logger.info("Saved peptide table to %s", args.peptide_file)
+
+        if args.output_file:
+            exp.score_df.to_csv(args.output_file, index=False, sep="\t")
+            logger.info("Saved results to %s", args.output_file)
 
         if args.array_file:
             np.save(args.array_file, exp.score_array)
@@ -153,7 +153,21 @@ def experiment() -> None:
 
 def time_scoring() -> None:
     p = get_argparser(Config)
-
+    peptides = p.add_mutually_exclusive_group()
+    peptides.add_argument(
+        "-p",
+        "--peptide-file",
+        nargs="?",
+        type=Path,
+        help="Path to save the peptide table",
+    )
+    peptides.add_argument(
+        "-lp",
+        "--load-peptide-table",
+        nargs="?",
+        type=Path,
+        help="Load an existing peptide table",
+    )
     p.add_argument(
         "-a",
         "--array-file",
@@ -164,7 +178,12 @@ def time_scoring() -> None:
     args, kw, logger = parse_args(p)
 
     config = Config(**kw)
-    with Experiment(config) as exp:
+    with Experiment(config, peptide_table=args.load_peptide_table) as exp:
+        if args.peptide_file:
+            df = exp.peptides
+            df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
+            df.to_csv(args.peptide_file, index=False, sep="\t")
+            logger.info("Saved peptide table to %s", args.peptide_file)
         _ = exp.predicted_spectra  # Ensure spectra are predicted before timing
         logger.info("Timing the scoring...")
         start_time = datetime.now()
