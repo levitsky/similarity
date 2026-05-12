@@ -240,6 +240,38 @@ class MzIrtDataFrame(Fixture):
 
         return df
 
+    def subset_offsets(self, experiment: "Experiment") -> list[int]:
+        """
+        Returns the offsets for each subset. Given the batch size, partition the "mzrt" array that is sorted by m/z
+        so that batches overlap by the configured m/z tolerance. This ensures that all spectra that could potentially
+        be within tolerance of each other are processed in the same batch.
+        """
+        c = experiment.config
+        dim, tol = "m/z", c.mz_tolerance  # slicing axis and tolerance for batch overlap
+        bsize = experiment.peptides.shape[0] // c.subsets
+        values = experiment.peptides[dim].values
+        offsets = [0]
+        while offsets[-1] < len(values):
+            end_of_batch = next_offset = offsets[-1] + bsize
+            if next_offset >= len(values):
+                break
+            while values[end_of_batch] - values[next_offset - 1] <= tol:
+                next_offset -= 1
+                if (
+                    next_offset <= offsets[-1]
+                    or end_of_batch - next_offset >= bsize // 5
+                ):
+                    logger.warning(
+                        "Batch size is too small to accommodate the %s tolerance. "
+                        "Increasing the batch size to %d...",
+                        dim,
+                        bsize * 2,
+                    )
+                    return self.batch_offsets(bsize * 2, experiment)
+            offsets.append(next_offset)
+        logger.debug("Calculated batch offsets: %s", offsets[:10])
+        return bsize, offsets
+
     def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
         if experiment.peptide_table is not None:
             logger.info("Loading peptide table from %s", experiment.peptide_table)

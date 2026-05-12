@@ -197,6 +197,8 @@ class Config(BaseConfig):
     score_threshold: float = 0.0
     spectrum_collection: SpectrumCollectionType = SpectrumCollectionType.SHAREDARRAY
     max_peaks: int = 50
+    subsets: int = 1
+    subset: int = 0
 
     def __post_init__(self):
         if self.cache != CacheType.NONE and self.cache_conf is None:
