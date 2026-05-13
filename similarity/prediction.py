@@ -1,4 +1,5 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+from collections.abc import Sequence, Callable
 import pandas as pd
 import numpy as np
 from multiprocessing.shared_memory import SharedMemory
@@ -240,16 +241,18 @@ class MzIrtDataFrame(Fixture):
 
         return df
 
-    def subset_offsets(self, experiment: "Experiment") -> list[int]:
+    def subset_offsets(
+        self, experiment: "Experiment", mz_array: np.ndarray
+    ) -> list[int]:
         """
-        Returns the offsets for each subset. Given the batch size, partition the "mzrt" array that is sorted by m/z
-        so that batches overlap by the configured m/z tolerance. This ensures that all spectra that could potentially
-        be within tolerance of each other are processed in the same batch.
+        Returns the offsets for each subset. When the whole dataset is too big to be processed at once,
+        Experiment Config can have subsets > 1, which will split the dataset into that many subsets.
+        This function calculates the offsets for each subset.
         """
         c = experiment.config
         dim, tol = "m/z", c.mz_tolerance  # slicing axis and tolerance for batch overlap
-        bsize = experiment.peptides.shape[0] // c.subsets
-        values = experiment.peptides[dim].values
+        bsize = len(mz_array) // c.subsets
+        values = mz_array
         offsets = [0]
         while offsets[-1] < len(values):
             end_of_batch = next_offset = offsets[-1] + bsize
@@ -261,31 +264,30 @@ class MzIrtDataFrame(Fixture):
                     next_offset <= offsets[-1]
                     or end_of_batch - next_offset >= bsize // 5
                 ):
-                    logger.warning(
-                        "Batch size is too small to accommodate the %s tolerance. "
-                        "Increasing the batch size to %d...",
+                    logger.error(
+                        "Subset size is too small to accommodate the %s tolerance. "
+                        "Please decrease the number of subsets.",
                         dim,
-                        bsize * 2,
                     )
-                    return self.batch_offsets(bsize * 2, experiment)
+                    raise ValueError("Subset size is too small")
             offsets.append(next_offset)
-        logger.debug("Calculated batch offsets: %s", offsets[:10])
-        return bsize, offsets
+        logger.debug("Calculated subset offsets: %s", offsets[:10])
+        return offsets
 
-    def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
-        if experiment.peptide_table is not None:
-            logger.info("Loading peptide table from %s", experiment.peptide_table)
-            return self.load_peptide_table(experiment.peptide_table, experiment)
-        input_file = experiment.config.input_file
-        seq = np.unique(np.loadtxt(input_file, dtype=bytes))
-
-        logger.info("Loaded %d unique peptide sequences from %s", len(seq), input_file)
-
-        ptms = (
+    def has_ptms(self, experiment: "Experiment") -> bool:
+        return bool(
             experiment.config.ptms
             or experiment.config.variable_mods
             or experiment.config.fixed_mods
         )
+
+    def generate_sequences(self, experiment: "Experiment") -> np.ndarray:
+        input_file = cast("str | Path", experiment.config.input_file)
+        seq = np.unique(np.loadtxt(input_file, dtype=bytes))
+
+        logger.info("Loaded %d unique peptide sequences from %s", len(seq), input_file)
+
+        ptms = self.has_ptms(experiment)
         if experiment.config.variable_mods or experiment.config.fixed_mods:
             logger.info(
                 "Expanding peptide sequences with variable and fixed modifications"
@@ -352,7 +354,41 @@ class MzIrtDataFrame(Fixture):
                     ),
                 )
             seq = seq[~unsupported]
+        return seq
 
+    def mz_calculator(self, experiment: "Experiment") -> Callable[[bytes, int], float]:
+        if self.has_ptms(experiment):
+            return lambda peptide, charge: proforma.ProForma.parse(
+                peptide.decode("ascii")
+            ).mz(charge=charge)
+        else:
+            return lambda peptide, charge: cmass.fast_mass(
+                peptide.decode("ascii"), charge=charge
+            )
+
+    def mz_array(self, experiment: "Experiment", peptides: np.ndarray) -> np.ndarray:
+        """
+        Calculate m/z values for all peptides and charge states.
+        If multiple charges are configured, the output will be longer than the input.
+        """
+        logger.info("Calculating m/z values for all peptides and charge states...")
+        mz_calc = self.mz_calculator(experiment)
+        out = []
+        for charge in range(
+            experiment.config.min_charge, experiment.config.max_charge + 1
+        ):
+            out.extend(mz_calc(peptide, charge) for peptide in peptides)
+        logger.debug(
+            "%d m/z values calculated, samples: %s and %s", len(out), out[:5], out[-5:]
+        )
+        return np.array(out, dtype=np.float32)
+
+    def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
+        if experiment.peptide_table is not None:
+            logger.info("Loading peptide table from %s", experiment.peptide_table)
+            return self.load_peptide_table(experiment.peptide_table, experiment)
+
+        seq = self.generate_sequences(experiment)
         if seq.size == 0:
             logger.error("No valid peptide sequences found in input file, aborting")
             return pd.DataFrame()
@@ -361,6 +397,17 @@ class MzIrtDataFrame(Fixture):
         npeptides = len(seq)
         nprecursors = npeptides * ncharges
         logger.info("%d total precursors to analyze", nprecursors)
+
+        mzarr = self.mz_array(experiment, seq)
+        idx = np.argsort(mzarr)
+        mzarr = mzarr[idx]
+        if experiment.config.subsets > 1:
+            offsets = self.subset_offsets(experiment, mzarr)
+            logger.info(
+                "Dataset will be processed in %d subsets with offsets %s",
+                experiment.config.subsets,
+                offsets,
+            )
 
         seq_array = self.shared_array(
             experiment, "peptide_sequences", shape=(nprecursors,), dtype=seq.dtype
@@ -429,26 +476,7 @@ class MzIrtDataFrame(Fixture):
             )
             peptide_data["ccs"] = mzrt[:, 2]
 
-        if ptms:
-            for i, (peptide, charge) in enumerate(
-                zip(
-                    peptide_data["peptide_sequences"], peptide_data["precursor_charges"]
-                )
-            ):
-                peptide = peptide.decode("ascii")
-                try:
-                    mzrt[i, 0] = cmass.fast_mass(peptide, charge=charge)
-                except aux.PyteomicsError:
-                    mzrt[i, 0] = proforma.ProForma.parse(peptide).mz(charge=charge)
-
-        else:
-            for i, (peptide, charge) in enumerate(
-                zip(
-                    peptide_data["peptide_sequences"], peptide_data["precursor_charges"]
-                )
-            ):
-                peptide = peptide.decode("ascii")
-                mzrt[i, 0] = cmass.fast_mass(peptide, charge=charge)
+        mzrt[:, 0] = self.mz_array(experiment, seq_array)
 
         # sort by m/z for better perforamce
         logger.debug("Sorting peptides by m/z for better performance")
