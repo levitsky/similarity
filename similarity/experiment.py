@@ -2,10 +2,10 @@ import logging
 import traceback
 from .utils.config import Config
 from .utils.abc import Cache, IndexType
-from .prediction import PredictedSpectrumCollection, MzIrtDataFrame
+from .prediction import PredictedSpectrumCollection, MzIrtDataFrame, Offsets
 from .grouping import SpectrumGrouping
 from .output import ScoresDataFrame
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Sequence, cast
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class Experiment:
+    offsets = cast("Sequence[tuple[int, int]]", Offsets())
     peptides = cast("pd.DataFrame", MzIrtDataFrame())
     predicted_spectra = cast("SpectrumCollection", PredictedSpectrumCollection())
     score_array = cast("np.ndarray", SpectrumGrouping())

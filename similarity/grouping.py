@@ -34,6 +34,7 @@ class GroupingWorker(ExperimentWorker):
     charges: np.ndarray
     scaling_factors: np.ndarray
     mzrt: np.ndarray
+    previous_end: int
 
     def within_tolerance_2d(self, i: int, j: int) -> bool:
         arr = self.mzrt
@@ -125,7 +126,7 @@ class GroupingWorker(ExperimentWorker):
             scores = []
             j = x + offset
             for i in indices:
-                if i < j and self.within_tolerance(i, j):
+                if i < j and j > self.previous_end and self.within_tolerance(i, j):
                     score = self.score_pair(i, j)
                     if score >= self.config.score_threshold:
                         matches.append(i)
@@ -221,6 +222,12 @@ class SpectrumGrouping(Fixture):
         dtype = np.dtype([("i", np.int32), ("j", np.int32), ("score", np.float32)])
         # add global offset to account for the entire peptide dataframe being a subset
         global_offset = experiment.peptides.index[0]
+        if experiment.config.subset > 1:
+            previous_end = (
+                experiment.offsets[experiment.config.subset - 2][1] - global_offset
+            )
+        else:
+            previous_end = 0
         if experiment.config.workers > 1:
             logger.info(
                 "Grouping with %d workers...",
@@ -243,6 +250,7 @@ class SpectrumGrouping(Fixture):
                     tree=tree,
                     spectra=experiment.predicted_spectra,
                     scaling_factors=factors,
+                    previous_end=previous_end,
                 )
                 for _ in range(experiment.config.workers)
             ]
@@ -285,6 +293,7 @@ class SpectrumGrouping(Fixture):
                 tree=tree,
                 spectra=experiment.predicted_spectra,
                 scaling_factors=factors,
+                previous_end=previous_end,
             )
 
             pseudoworker.mzrt = np.ndarray(

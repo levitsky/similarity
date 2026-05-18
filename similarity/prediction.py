@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 from collections.abc import Sequence, Callable
 import pandas as pd
 import numpy as np
@@ -73,6 +73,16 @@ class PredictedSpectrumCollection(Fixture):
             index.finalize()
         assert collection.is_ready()
         return collection
+
+
+class Offsets(Fixture):
+    def __set__(self, instance: "Experiment", value: Sequence[tuple[int, int]]):
+        self._data[instance] = value
+
+    def evaluate(self, experiment: "Experiment") -> Any:
+        raise RuntimeError(
+            "Offsets are not supposed to be evaluated directly, they are set by the MzIrtDataFrame when calculating subset offsets."
+        )
 
 
 class MzIrtDataFrame(Fixture):
@@ -289,6 +299,7 @@ class MzIrtDataFrame(Fixture):
                     raise ValueError("Subset size is too small")
             offsets.append((next_offset, min(next_offset + bsize, len(values))))
         logger.debug("Calculated subset offsets: %s ... %s", offsets[:3], offsets[-3:])
+        experiment.offsets = offsets
         return offsets
 
     def has_ptms(self, experiment: "Experiment") -> bool:
