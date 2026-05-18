@@ -56,8 +56,10 @@ def _weightxy(x, y, m=0, n=0.5):
 
 
 class TestBase(unittest.TestCase):
+    test_file = "tests/test_peptides.txt"
+
     def setUp(self):
-        self.config = Config(input_file=Path("tests/test_peptides.txt"), batch_size=2)
+        self.config = Config(input_file=Path(self.test_file), batch_size=2)
         logging.basicConfig(
             level=logging.DEBUG,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -161,41 +163,6 @@ class ExperimentTest(TestBase):
                 self.assertTrue(
                     np.allclose(loaded["ccs"].to_numpy(copy=False), source["ccs"])
                 )
-
-    def test_subsets(self):
-        subsets = 2
-        outs = []
-        for i in range(subsets):
-            with Experiment(
-                dataclasses.replace(self.config, subset=i + 1, subsets=subsets)
-            ) as exp:
-                outs.append(exp.score_df.sort_values(["score"]))
-        combined = pd.concat(outs).sort_values(["score"])
-        self.assertEqual(
-            combined.shape[0], 9
-        )  # Assuming 9 pairs based on the test input
-        self.assertTrue(np.allclose(combined["score"], self.correct_scores, atol=1e-3))
-
-    def test_subsets_with_peptide_table(self):
-        subsets = 2
-        outs = []
-        with tempfile.TemporaryDirectory() as tmpdir:
-            peptide_file = Path(tmpdir) / "peptides.tsv"
-            with Experiment(self.config) as exp:
-                df = exp.peptides
-                df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
-                df.to_csv(peptide_file, index=False, sep="\t")
-                for i in range(subsets):
-                    with Experiment(
-                        dataclasses.replace(self.config, subset=i + 1, subsets=subsets),
-                        peptide_table=peptide_file,
-                    ) as exp_subset:
-                        outs.append(exp_subset.score_df.sort_values(["score"]))
-        combined = pd.concat(outs).sort_values(["score"])
-        self.assertEqual(
-            combined.shape[0], 9
-        )  # Assuming 9 pairs based on the test input
-        self.assertTrue(np.allclose(combined["score"], self.correct_scores, atol=1e-3))
 
     def test_run(self):
         """Test that Experiment executes and returns something."""
@@ -308,6 +275,57 @@ class ExperimentTest(TestBase):
         )
         with Experiment(config) as exp:
             self.assertEqual(exp.peptides["ccs"].isna().sum(), 0)
+
+
+class SubsetTest(TestBase):
+    test_file = "tests/10k_peptides.txt"
+
+    def setUp(self):
+        super().setUp()
+        with Experiment(self.config) as exp:
+            self.correct_scores = exp.score_array
+            self.correct_scores.sort()
+
+    def test_subsets(self):
+        subsets = 3
+        outs = []
+        for i in range(subsets):
+            with Experiment(
+                dataclasses.replace(self.config, subset=i + 1, subsets=subsets)
+            ) as exp:
+                outs.append(exp.score_array)
+        combined = np.concat(outs)
+        combined.sort()
+        self.assertEqual(combined.shape[0], self.correct_scores.shape[0])
+        self.assertTrue((combined["i"] == self.correct_scores["i"]).all())
+        self.assertTrue((combined["j"] == self.correct_scores["j"]).all())
+        self.assertTrue(
+            np.allclose(combined["score"], self.correct_scores["score"], atol=1e-3)
+        )
+
+    def test_subsets_with_peptide_table(self):
+        subsets = 3
+        outs = []
+        with tempfile.TemporaryDirectory() as tmpdir:
+            peptide_file = Path(tmpdir) / "peptides.tsv"
+            with Experiment(self.config) as exp:
+                df = exp.peptides
+                df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
+                df.to_csv(peptide_file, index=False, sep="\t")
+                for i in range(subsets):
+                    with Experiment(
+                        dataclasses.replace(self.config, subset=i + 1, subsets=subsets),
+                        peptide_table=peptide_file,
+                    ) as exp_subset:
+                        outs.append(exp_subset.score_array)
+        combined = np.concat(outs)
+        combined.sort()
+        self.assertEqual(combined.shape[0], self.correct_scores.shape[0])
+        self.assertTrue((combined["i"] == self.correct_scores["i"]).all())
+        self.assertTrue((combined["j"] == self.correct_scores["j"]).all())
+        self.assertTrue(
+            np.allclose(combined["score"], self.correct_scores["score"], atol=1e-3)
+        )
 
 
 class EquivalenceTest(TestBase):
