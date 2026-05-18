@@ -18,11 +18,6 @@ logger = logging.getLogger(__name__)
 class SharedArraySpectrumCollection(SpectrumCollection):
     """
     A SpectrumCollection that keeps predicted spectra in a 3D array in shared memory.
-
-    ..note ::
-        The current implementation assumes that the indices in the peptide table are contiguous.
-        It will note the first index and use it as index offset.
-        For non-contiguous indices, the implementation will need to be changed to keep track of the mapping between peptide indices and array indices.
     """
 
     shared_memory: "SharedMemory"
@@ -61,8 +56,8 @@ class SharedArraySpectrumCollection(SpectrumCollection):
         self, key: int
     ) -> tuple["NDArray[np.float32]", "NDArray[np.float32]"]:
         mz, intensities = (
-            self.array[key - self.offset, 0],
-            self.array[key - self.offset, 1],
+            self.array[key, 0],
+            self.array[key, 1],
         )
         idx = intensities > 0
         return mz[idx], intensities[idx]
