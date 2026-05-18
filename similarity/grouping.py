@@ -219,6 +219,8 @@ class SpectrumGrouping(Fixture):
         nb = self.nbatches(experiment)
         logger.info("Processing %d spectra in %d batches...", tree.n, nb)
         dtype = np.dtype([("i", np.int32), ("j", np.int32), ("score", np.float32)])
+        # add global offset to account for the entire peptide dataframe being a subset
+        global_offset = experiment.peptides.index[0]
         if experiment.config.workers > 1:
             logger.info(
                 "Grouping with %d workers...",
@@ -267,7 +269,7 @@ class SpectrumGrouping(Fixture):
                         i, matches, scores = GroupingWorker.decode_result(item)
                         count += 1
                         for m, s in zip(matches, scores):
-                            yield (i, m, s)
+                            yield (i + global_offset, m + global_offset, s)
                         if count % experiment.config.batch_size == 0:
                             logger.debug("Processed %d peptides...", count)
 
@@ -301,7 +303,7 @@ class SpectrumGrouping(Fixture):
                     for item in pseudoworker.process_batch(batch):
                         i, matches, scores = GroupingWorker.decode_result(item)
                         for m, s in zip(matches, scores):
-                            yield (i, m, s)
+                            yield (i + global_offset, m + global_offset, s)
 
             scores = np.fromiter(produce_results(), dtype=dtype)
         logger.info(
@@ -309,4 +311,10 @@ class SpectrumGrouping(Fixture):
             len(scores),
             experiment.config.score_threshold,
         )
+        logger.debug(
+            "Indices of peptides: %s .. %s",
+            experiment.peptides.index[:5],
+            experiment.peptides.index[-5:],
+        )
+        logger.debug("Sample of scored pairs: %s .. %s", scores[:5], scores[-5:])
         return scores

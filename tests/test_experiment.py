@@ -64,6 +64,19 @@ class TestBase(unittest.TestCase):
             force=True,  # overrides any existing logging config
         )
         self.logger = logging.getLogger(__name__)
+        self.correct_scores = sorted(
+            [
+                0.847243,
+                0.816326,
+                0.724647,
+                0.912134,
+                0.772697,
+                0.81768,
+                0.974192,
+                0.858346,
+                0.933183,
+            ]
+        )
 
 
 class ExperimentTest(TestBase):
@@ -149,6 +162,41 @@ class ExperimentTest(TestBase):
                     np.allclose(loaded["ccs"].to_numpy(copy=False), source["ccs"])
                 )
 
+    def test_subsets(self):
+        subsets = 2
+        outs = []
+        for i in range(subsets):
+            with Experiment(
+                dataclasses.replace(self.config, subset=i + 1, subsets=subsets)
+            ) as exp:
+                outs.append(exp.score_df.sort_values(["score"]))
+        combined = pd.concat(outs).sort_values(["score"])
+        self.assertEqual(
+            combined.shape[0], 9
+        )  # Assuming 9 pairs based on the test input
+        self.assertTrue(np.allclose(combined["score"], self.correct_scores, atol=1e-3))
+
+    def test_subsets_with_peptide_table(self):
+        subsets = 2
+        outs = []
+        with tempfile.TemporaryDirectory() as tmpdir:
+            peptide_file = Path(tmpdir) / "peptides.tsv"
+            with Experiment(self.config) as exp:
+                df = exp.peptides
+                df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
+                df.to_csv(peptide_file, index=False, sep="\t")
+                for i in range(subsets):
+                    with Experiment(
+                        dataclasses.replace(self.config, subset=i + 1, subsets=subsets),
+                        peptide_table=peptide_file,
+                    ) as exp_subset:
+                        outs.append(exp_subset.score_df.sort_values(["score"]))
+        combined = pd.concat(outs).sort_values(["score"])
+        self.assertEqual(
+            combined.shape[0], 9
+        )  # Assuming 9 pairs based on the test input
+        self.assertTrue(np.allclose(combined["score"], self.correct_scores, atol=1e-3))
+
     def test_run(self):
         """Test that Experiment executes and returns something."""
         for workers in [1, 5]:
@@ -189,19 +237,7 @@ class ExperimentTest(TestBase):
                             self.assertTrue(
                                 np.allclose(
                                     result["score"],
-                                    sorted(
-                                        [
-                                            0.847243,
-                                            0.816326,
-                                            0.724647,
-                                            0.912134,
-                                            0.772697,
-                                            0.81768,
-                                            0.974192,
-                                            0.858346,
-                                            0.933183,
-                                        ]
-                                    ),
+                                    self.correct_scores,
                                     atol=1e-3,
                                 )
                             )

@@ -207,6 +207,23 @@ class MzIrtDataFrame(Fixture):
         if df["peptide_sequences"].isna().any():
             raise ValueError("Column peptide_sequences contains missing values")
 
+        if experiment.config.subsets > 1:
+            logger.info(
+                "Subset processing mode. Assuming peptide table is sorted by m/z and contains the complete peptide set."
+            )
+            offsets = self.subset_offsets(experiment, df["m/z"])
+            start, end = offsets[experiment.config.subset - 1]
+            logger.info(
+                "Loading subset %d (rows %d to %d) from peptide table %s with m/z range %.4f - %.4f",
+                experiment.config.subset,
+                start + 1,
+                end,
+                fpath,
+                df["m/z"].iloc[start],
+                df["m/z"].iloc[end - 1],
+            )
+            df = df.iloc[start:end]
+
         seq = np.char.encode(
             df["peptide_sequences"].to_numpy(dtype=str, copy=False), "ascii"
         )
@@ -243,7 +260,7 @@ class MzIrtDataFrame(Fixture):
 
     def subset_offsets(
         self, experiment: "Experiment", mz_array: np.ndarray
-    ) -> list[int]:
+    ) -> list[tuple[int, int]]:
         """
         Returns the offsets for each subset. When the whole dataset is too big to be processed at once,
         Experiment Config can have subsets > 1, which will split the dataset into that many subsets.
@@ -253,15 +270,15 @@ class MzIrtDataFrame(Fixture):
         dim, tol = "m/z", c.mz_tolerance  # slicing axis and tolerance for batch overlap
         bsize = len(mz_array) // c.subsets
         values = mz_array
-        offsets = [0]
-        while offsets[-1] < len(values):
-            end_of_batch = next_offset = offsets[-1] + bsize
+        offsets = [(0, bsize)]
+        while offsets[-1][1] < len(values):
+            end_of_batch = next_offset = offsets[-1][1]
             if next_offset >= len(values):
                 break
             while values[end_of_batch] - values[next_offset - 1] <= tol:
                 next_offset -= 1
                 if (
-                    next_offset <= offsets[-1]
+                    next_offset <= offsets[-1][0]
                     or end_of_batch - next_offset >= bsize // 5
                 ):
                     logger.error(
@@ -270,8 +287,8 @@ class MzIrtDataFrame(Fixture):
                         dim,
                     )
                     raise ValueError("Subset size is too small")
-            offsets.append(next_offset)
-        logger.debug("Calculated subset offsets: %s", offsets[:10])
+            offsets.append((next_offset, min(next_offset + bsize, len(values))))
+        logger.debug("Calculated subset offsets: %s ... %s", offsets[:3], offsets[-3:])
         return offsets
 
     def has_ptms(self, experiment: "Experiment") -> bool:
@@ -399,8 +416,8 @@ class MzIrtDataFrame(Fixture):
         logger.info("%d total precursors to analyze", nprecursors)
 
         mzarr = self.mz_array(experiment, seq)
-        idx = np.argsort(mzarr)
-        mzarr = mzarr[idx]
+        sort_idx = np.argsort(mzarr)
+        mzarr = mzarr[sort_idx]
         if experiment.config.subsets > 1:
             offsets = self.subset_offsets(experiment, mzarr)
             logger.info(
@@ -408,14 +425,31 @@ class MzIrtDataFrame(Fixture):
                 experiment.config.subsets,
                 offsets,
             )
+            idx_start, idx_end = offsets[experiment.config.subset - 1]
+            logger.info(
+                "Processing subset %d (precursors %d to %d of %d) with m/z range %.4f - %.4f",
+                experiment.config.subset,
+                idx_start + 1,
+                idx_end,
+                len(mzarr),
+                mzarr[idx_start],
+                mzarr[idx_end - 1],
+            )
+        else:
+            logger.info("Processing all %d precursors", nprecursors)
+            idx_start, idx_end = 0, len(mzarr)
 
+        subset_size = idx_end - idx_start
+
+        seq_idx = sort_idx[idx_start:idx_end] % npeptides
         seq_array = self.shared_array(
-            experiment, "peptide_sequences", shape=(nprecursors,), dtype=seq.dtype
+            experiment, "peptide_sequences", shape=(subset_size,), dtype=seq.dtype
         )
-        for i in range(ncharges):
-            seq_array[i * npeptides : (i + 1) * npeptides] = seq
+        # for i in range(ncharges):
+        #     seq_array[i * npeptides : (i + 1) * npeptides] = seq
+        seq_array[:] = seq[seq_idx]
 
-        mzrt_shape = (nprecursors, 3 if experiment.config.model_ccs is not None else 2)
+        mzrt_shape = (subset_size, 3 if experiment.config.model_ccs is not None else 2)
 
         mzrt = self.shared_array(experiment, "mzrt", shape=mzrt_shape, dtype=np.float32)
         mzrt[:] = np.nan
@@ -426,28 +460,40 @@ class MzIrtDataFrame(Fixture):
             index = experiment.cache[IndexType.IRT]
         else:
             index = None
+        # after the addition of subsets, seq_array can have repeated sequences (due to different charges)
+        # requesting RT predictions is slightly redundant but is left for simplicity
+        # TODO: optimize
         self.get_predictions(
             "irt",
             index,
-            pd.DataFrame({"peptide_sequences": seq}, copy=False),
-            mzrt[:npeptides, 1],
+            pd.DataFrame({"peptide_sequences": seq_array}, copy=False),
+            mzrt[:, 1],
             experiment,
         )
         logger.debug("Predicted iRT values:\n%s", mzrt[:10, 1])
-        for i in range(1, ncharges):
-            mzrt[i * npeptides : (i + 1) * npeptides, 1] = mzrt[:npeptides, 1]
+        # for i in range(1, ncharges):
+        #     mzrt[i * npeptides : (i + 1) * npeptides, 1] = mzrt[:npeptides, 1]
 
         charge_array = self.shared_array(
-            experiment, "precursor_charges", shape=(nprecursors,), dtype=np.uint8
+            experiment, "precursor_charges", shape=(subset_size,), dtype=np.uint8
         )
-        for charge in range(
-            experiment.config.min_charge, experiment.config.max_charge + 1
-        ):
-            charge_array[
-                (charge - experiment.config.min_charge)
-                * npeptides : (charge - experiment.config.min_charge + 1)
-                * npeptides
-            ] = charge
+        # for charge in range(
+        #     experiment.config.min_charge, experiment.config.max_charge + 1
+        # ):
+        #     charge_array[
+        #         (charge - experiment.config.min_charge)
+        #         * npeptides : (charge - experiment.config.min_charge + 1)
+        #         * npeptides
+        #     ] = charge
+        logger.debug("Sorted indexes: %s", sort_idx[idx_start:idx_end])
+        logger.debug("Sequence indexes: %s", seq_idx)
+        logger.debug("Charge indexes: %s", sort_idx[idx_start:idx_end] // npeptides)
+
+        charge_array[:] = np.arange(
+            experiment.config.min_charge,
+            experiment.config.max_charge + 1,
+            dtype=np.uint8,
+        )[sort_idx[idx_start:idx_end] // npeptides]
 
         peptide_data = {
             "peptide_sequences": seq_array,
@@ -476,15 +522,15 @@ class MzIrtDataFrame(Fixture):
             )
             peptide_data["ccs"] = mzrt[:, 2]
 
-        mzrt[:, 0] = self.mz_array(experiment, seq_array)
+        mzrt[:, 0] = mzarr[idx_start:idx_end]
 
         # sort by m/z for better perforamce
-        logger.debug("Sorting peptides by m/z for better performance")
-        idx = np.argsort(mzrt[:, 0])
-        for arr in [seq_array, charge_array, mzrt]:
-            arr[:] = arr[idx]
+        # logger.debug("Sorting peptides by m/z for better performance")
+        # idx = np.argsort(mzrt[:, 0])
+        # for arr in [seq_array, charge_array, mzrt]:
+        #     arr[:] = arr[idx]
 
-        df = pd.DataFrame(peptide_data, copy=False)
+        df = pd.DataFrame(peptide_data, copy=False, index=range(idx_start, idx_end))
         # the rest of the columns are not in shared memory
         df["collision_energies"] = experiment.config.collision_energy
         if experiment.config.fragmentation_type is not None:
