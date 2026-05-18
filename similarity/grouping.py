@@ -126,7 +126,7 @@ class GroupingWorker(ExperimentWorker):
             scores = []
             j = x + offset
             for i in indices:
-                if i < j and j > self.previous_end and self.within_tolerance(i, j):
+                if i < j and j >= self.previous_end and self.within_tolerance(i, j):
                     score = self.score_pair(i, j)
                     if score >= self.config.score_threshold:
                         matches.append(i)
@@ -226,6 +226,7 @@ class SpectrumGrouping(Fixture):
             previous_end = (
                 experiment.offsets[experiment.config.subset - 2][1] - global_offset
             )
+            logger.debug("End of previous subset: %d", previous_end)
         else:
             previous_end = 0
         if experiment.config.workers > 1:

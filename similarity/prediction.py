@@ -278,26 +278,41 @@ class MzIrtDataFrame(Fixture):
         """
         c = experiment.config
         dim, tol = "m/z", c.mz_tolerance  # slicing axis and tolerance for batch overlap
-        bsize = len(mz_array) // c.subsets
+        nvalues = len(mz_array)
+        if c.subsets > nvalues:
+            raise ValueError(
+                f"Number of subsets ({c.subsets}) cannot exceed number of peptides ({nvalues})"
+            )
+
+        bsize = nvalues // c.subsets
         values = mz_array
-        offsets = [(0, bsize)]
-        while offsets[-1][1] < len(values):
-            end_of_batch = next_offset = offsets[-1][1]
-            if next_offset >= len(values):
-                break
-            while values[end_of_batch] - values[next_offset - 1] <= tol:
-                next_offset -= 1
-                if (
-                    next_offset <= offsets[-1][0]
-                    or end_of_batch - next_offset >= bsize // 5
-                ):
-                    logger.error(
-                        "Subset size is too small to accommodate the %s tolerance. "
-                        "Please decrease the number of subsets.",
-                        dim,
-                    )
-                    raise ValueError("Subset size is too small")
-            offsets.append((next_offset, min(next_offset + bsize, len(values))))
+
+        # Nominal boundaries without overlap: exactly c.subsets chunks, full coverage.
+        ends = [((k + 1) * nvalues) // c.subsets for k in range(c.subsets)]
+        offsets: list[tuple[int, int]] = []
+        previous_start = 0
+        for k, end in enumerate(ends):
+            if k == 0:
+                start = 0
+            else:
+                end_of_previous = ends[k - 1]
+                start = end_of_previous
+                max_overlap = max(1, bsize // 5)
+                while values[end_of_previous] - values[start - 1] <= tol:
+                    start -= 1
+                    if (
+                        start <= previous_start
+                        or end_of_previous - start >= max_overlap
+                    ):
+                        logger.error(
+                            "Subset size is too small to accommodate the %s tolerance. "
+                            "Please decrease the number of subsets.",
+                            dim,
+                        )
+                        raise ValueError("Subset size is too small")
+            offsets.append((start, end))
+            previous_start = start
+
         logger.debug("Calculated subset offsets: %s ... %s", offsets[:3], offsets[-3:])
         experiment.offsets = offsets
         return offsets
