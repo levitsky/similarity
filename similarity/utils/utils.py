@@ -1,6 +1,5 @@
 import multiprocessing as mp
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING
@@ -28,7 +27,12 @@ class ExperimentWorker(ABC, mp.Process):
 class ExperimentRunner:
     """
     A class responsible for running an experiment with subsets.
-    When `run` is called, it will create an Experiment object for each subset and run them in parallel using `jobs` processes.
+    When `run` is called, it will create an Experiment object for each subset and run them.
+
+    .. note::
+        Currently, subsets are processed sequentially, and the `jobs` parameter is not supported.
+        In the future, this class may be extended to support parallel execution of subsets using multiprocessing or multithreading.
+
     If `create_peptide_table` is True, a peptide table for the entire dataset will be created before running the experiments for each subset.
     `array_file`, and `score_df_file` are optional file paths for saving arrays and saving score dataframes, respectively.
     They SHOULD contain a placeholder `{}` for the subset number, e.g. `array_file="score_array_subset_{}.npy"`.
@@ -38,7 +42,7 @@ class ExperimentRunner:
         self,
         config: "Config",
         peptide_table: str | Path,
-        jobs: int = 1,
+        jobs: int = 1,  # unsupported for now
         create_peptide_table: bool = True,
         array_file: str | None = None,
         score_df_file: str | None = None,
@@ -53,7 +57,7 @@ class ExperimentRunner:
             score_df_file,
         )
         self.config = config
-        self.jobs = jobs
+        # self.jobs = jobs
         self.create_peptide_table = create_peptide_table
         self.peptide_table = peptide_table
         self.array_file = array_file
@@ -102,11 +106,5 @@ class ExperimentRunner:
         if self.create_peptide_table:
             self.create_full_peptide_table()
 
-        max_jobs = max(1, self.jobs)
-        with ThreadPoolExecutor(max_workers=max_jobs) as executor:
-            futures = [
-                executor.submit(self.run_subset, subset)
-                for subset in range(1, self.config.subsets + 1)
-            ]
-            for future in as_completed(futures):
-                future.result()
+        for subset in range(1, self.config.subsets + 1):
+            self.run_subset(subset)

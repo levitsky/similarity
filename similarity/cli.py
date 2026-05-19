@@ -150,7 +150,7 @@ def experiment() -> None:
         runner = ExperimentRunner(
             config=config,
             peptide_table=args.peptide_file or args.load_peptide_table,
-            jobs=args.jobs or 1,
+            # jobs=args.jobs or 1,
             create_peptide_table=args.peptide_file is not None,
             array_file=str(args.array_file) if args.array_file else None,
             score_df_file=str(args.output_file) if args.output_file else None,

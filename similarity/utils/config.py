@@ -234,12 +234,12 @@ class Config(BaseConfig):
             action="store_true",
             help="Run the experiment for all subsets",
         )
-        parser.add_argument(
-            "--jobs",
-            type=int,
-            default=None,
-            help="Number of parallel jobs to use with --all",
-        )
+        # parser.add_argument(
+        #     "--jobs",
+        #     type=int,
+        #     default=None,
+        #     help="Number of parallel jobs to use with --all",
+        # )
         return parser
 
     def __post_init__(self):
