@@ -15,6 +15,7 @@ from similarity.utils.config import (
 )
 from similarity.utils.cache import CacheType
 from similarity.utils.spectrum_collection import SpectrumCollectionType
+from similarity.utils.utils import ExperimentRunner
 from pathlib import Path
 import logging
 
@@ -285,6 +286,33 @@ class SubsetTest(TestBase):
         with Experiment(self.config) as exp:
             self.correct_scores = exp.score_array
             self.correct_scores.sort()
+
+    def test_experiment_runner(self):
+        subsets = 3
+        config = dataclasses.replace(self.config, subsets=subsets)
+        runner = ExperimentRunner(
+            config=config,
+            peptide_table="tests/peptides_subset.tsv",
+            jobs=2,
+            create_peptide_table=True,
+            array_file="tests/scores_subset_{}.npy",
+            score_df_file="tests/scores_subset_{}.tsv",
+        )
+        runner.run()
+        combined = []
+        for i in range(subsets):
+            with Experiment(
+                dataclasses.replace(self.config, subset=i + 1, subsets=subsets)
+            ) as exp:
+                combined.append(exp.score_array)
+        combined = np.concat(combined)
+        combined.sort()
+        self.assertEqual(combined.shape[0], self.correct_scores.shape[0])
+        self.assertTrue((combined["i"] == self.correct_scores["i"]).all())
+        self.assertTrue((combined["j"] == self.correct_scores["j"]).all())
+        self.assertTrue(
+            np.allclose(combined["score"], self.correct_scores["score"], atol=1e-3)
+        )
 
     def test_subsets(self):
         subsets = 3
