@@ -471,8 +471,6 @@ class MzIrtDataFrame(Fixture):
         seq_array = self.shared_array(
             experiment, "peptide_sequences", shape=(subset_size,), dtype=seq.dtype
         )
-        # for i in range(ncharges):
-        #     seq_array[i * npeptides : (i + 1) * npeptides] = seq
         seq_array[:] = seq[seq_idx]
 
         mzrt_shape = (subset_size, 3 if experiment.config.model_ccs is not None else 2)
@@ -497,23 +495,14 @@ class MzIrtDataFrame(Fixture):
             experiment,
         )
         logger.debug("Predicted iRT values:\n%s", mzrt[:10, 1])
-        # for i in range(1, ncharges):
-        #     mzrt[i * npeptides : (i + 1) * npeptides, 1] = mzrt[:npeptides, 1]
 
         charge_array = self.shared_array(
             experiment, "precursor_charges", shape=(subset_size,), dtype=np.uint8
         )
-        # for charge in range(
-        #     experiment.config.min_charge, experiment.config.max_charge + 1
-        # ):
-        #     charge_array[
-        #         (charge - experiment.config.min_charge)
-        #         * npeptides : (charge - experiment.config.min_charge + 1)
-        #         * npeptides
-        #     ] = charge
-        logger.debug("Sorted indexes: %s", sort_idx[idx_start:idx_end])
-        logger.debug("Sequence indexes: %s", seq_idx)
-        logger.debug("Charge indexes: %s", sort_idx[idx_start:idx_end] // npeptides)
+
+        # logger.debug("Sorted indexes: %s", sort_idx[idx_start:idx_end])
+        # logger.debug("Sequence indexes: %s", seq_idx)
+        # logger.debug("Charge indexes: %s", sort_idx[idx_start:idx_end] // npeptides)
 
         charge_array[:] = np.arange(
             experiment.config.min_charge,
@@ -549,12 +538,6 @@ class MzIrtDataFrame(Fixture):
             peptide_data["ccs"] = mzrt[:, 2]
 
         mzrt[:, 0] = mzarr[idx_start:idx_end]
-
-        # sort by m/z for better perforamce
-        # logger.debug("Sorting peptides by m/z for better performance")
-        # idx = np.argsort(mzrt[:, 0])
-        # for arr in [seq_array, charge_array, mzrt]:
-        #     arr[:] = arr[idx]
 
         df = pd.DataFrame(peptide_data, copy=False, index=range(idx_start, idx_end))
         # the rest of the columns are not in shared memory
