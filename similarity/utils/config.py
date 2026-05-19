@@ -200,6 +200,48 @@ class Config(BaseConfig):
     subsets: int = 1
     subset: int = 1
 
+    @classmethod
+    def argparser(cls) -> argparse.ArgumentParser:
+        parser = super(Config, cls).argparser()
+
+        subset_action = next(
+            (action for action in parser._actions if action.dest == "subset"), None
+        )
+        if subset_action is not None:
+            parser._remove_action(subset_action)
+            for option in subset_action.option_strings:
+                parser._option_string_actions.pop(option, None)
+            for group in parser._action_groups:
+                if subset_action in group._group_actions:
+                    group._group_actions.remove(subset_action)
+
+        subset_group = parser.add_mutually_exclusive_group()
+        if subset_action is not None:
+            subset_group.add_argument(
+                *subset_action.option_strings,
+                type=subset_action.type,
+                default=subset_action.default,
+                required=subset_action.required,
+                choices=subset_action.choices,
+                metavar=subset_action.metavar,
+                help=subset_action.help,
+            )
+        else:
+            subset_group.add_argument("--subset", type=int, default=1)
+
+        subset_group.add_argument(
+            "--all",
+            action="store_true",
+            help="Run the experiment for all subsets",
+        )
+        parser.add_argument(
+            "--jobs",
+            type=int,
+            default=None,
+            help="Number of parallel jobs to use with --all",
+        )
+        return parser
+
     def __post_init__(self):
         if self.cache != CacheType.NONE and self.cache_conf is None:
             logger.warning(

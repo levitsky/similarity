@@ -1,5 +1,6 @@
 from .utils.config import Config, cache_args, CacheConfigType
 from .utils.cache import CacheType
+from .utils.utils import ExperimentRunner
 from .experiment import Experiment
 from pathlib import Path
 import numpy as np
@@ -50,6 +51,12 @@ def parse_args(
     Normalize command-line arguments, sets up logging and returns the namespace and a dict with converted configuration arguments.
     """
     args = parser.parse_args()
+    if (
+        hasattr(args, "jobs")
+        and args.jobs is not None
+        and not getattr(args, "all", False)
+    ):
+        parser.error("--jobs can only be used together with --all")
     logger = setup_logging(args)
     logger.debug("Parsed arguments: %s", args)
     kw = vars(args).copy()
@@ -60,6 +67,8 @@ def parse_args(
         "load_peptide_table",
         "array_file",
         "log_file",
+        "all",
+        "jobs",
     ]:
         kw.pop(key, None)
     logger.debug("Registered cache configuration arguments: %s", cache_args)
@@ -135,6 +144,20 @@ def experiment() -> None:
     args, kw, logger = parse_args(p)
 
     config = Config(**kw)
+    if args.all:
+        if args.peptide_file is None and args.load_peptide_table is None:
+            p.error("--all requires either --peptide-file or --load-peptide-table")
+        runner = ExperimentRunner(
+            config=config,
+            peptide_table=args.peptide_file or args.load_peptide_table,
+            jobs=args.jobs or 1,
+            create_peptide_table=args.peptide_file is not None,
+            array_file=str(args.array_file) if args.array_file else None,
+            score_df_file=str(args.output_file) if args.output_file else None,
+        )
+        runner.run()
+        return
+
     with Experiment(config, peptide_table=args.load_peptide_table) as exp:
         if args.peptide_file:
             df = exp.peptides

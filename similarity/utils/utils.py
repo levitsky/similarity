@@ -43,6 +43,15 @@ class ExperimentRunner:
         array_file: str | None = None,
         score_df_file: str | None = None,
     ):
+        logger.debug(
+            "Initializing ExperimentRunner with config: %s, peptide_table: %s, jobs: %d, create_peptide_table: %s, array_file: %s, score_df_file: %s",
+            config,
+            peptide_table,
+            jobs,
+            create_peptide_table,
+            array_file,
+            score_df_file,
+        )
         self.config = config
         self.jobs = jobs
         self.create_peptide_table = create_peptide_table
