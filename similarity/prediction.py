@@ -427,6 +427,12 @@ class MzIrtDataFrame(Fixture):
         return np.array(out, dtype=np.float32)
 
     def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
+        if experiment.config.subsets > 1 and experiment.config.subset == 0:
+            logger.error(
+                "Subset number is not set. Please set subset to a value between 1 and %d.",
+                experiment.config.subsets,
+            )
+            raise ValueError("Subset number is not set")
         if experiment.peptide_table is not None:
             logger.info("Loading peptide table from %s", experiment.peptide_table)
             return self.load_peptide_table(experiment.peptide_table, experiment)

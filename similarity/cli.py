@@ -67,8 +67,6 @@ def parse_args(
         "load_peptide_table",
         "array_file",
         "log_file",
-        "all",
-        "jobs",
     ]:
         kw.pop(key, None)
     logger.debug("Registered cache configuration arguments: %s", cache_args)
@@ -144,13 +142,14 @@ def experiment() -> None:
     args, kw, logger = parse_args(p)
 
     config = Config(**kw)
-    if args.all:
+    if args.subsets > 1 and args.subset == 0:
         if args.peptide_file is None and args.load_peptide_table is None:
-            p.error("--all requires either --peptide-file or --load-peptide-table")
+            p.error(
+                "Running multiple subsets requires either --peptide-file or --load-peptide-table"
+            )
         runner = ExperimentRunner(
             config=config,
             peptide_table=args.peptide_file or args.load_peptide_table,
-            # jobs=args.jobs or 1,
             create_peptide_table=args.peptide_file is not None,
             array_file=str(args.array_file) if args.array_file else None,
             score_df_file=str(args.output_file) if args.output_file else None,
