@@ -177,6 +177,8 @@ class Config(BaseConfig):
     fragmentation_type: str | None = None
     min_charge: int = 2
     max_charge: int = 2
+    min_length: int = 5
+    max_length: int = 30
     model_intensity: KoinaIntensityModel = KoinaIntensityModel.Prosit_2020_intensity_HCD
     model_irt: KoinaRTModel = KoinaRTModel.Prosit_2019_irt
     model_ccs: KoinaCCSModel | None = None
