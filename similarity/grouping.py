@@ -37,6 +37,26 @@ class GroupingWorker(ExperimentWorker):
     mzrt: np.ndarray
     previous_end: int
 
+    def within_tolerance_2d_no_isotope(self, i: int, j: int) -> bool:
+        arr = self.mzrt
+        mz_tol = self.config.mz_tolerance
+        irt_tol = self.config.irt_tolerance
+        return (
+            abs(arr[i, 0] - arr[j, 0]) <= mz_tol
+            and abs(arr[i, 1] - arr[j, 1]) <= irt_tol
+        )
+
+    def within_tolerance_3d_no_isotope(self, i: int, j: int) -> bool:
+        arr = self.mzrt
+        mz_tol = self.config.mz_tolerance
+        irt_tol = self.config.irt_tolerance
+        ccs_rtol = self.config.ccs_rtolerance
+        return (
+            abs(arr[i, 0] - arr[j, 0]) <= mz_tol
+            and abs(arr[i, 1] - arr[j, 1]) <= irt_tol
+            and abs(arr[i, 2] - arr[j, 2]) <= ccs_rtol * max(arr[i, 2], arr[j, 2])
+        )
+
     def within_tolerance_2d(self, i: int, j: int) -> bool:
         arr = self.mzrt
         mz_tol = self.config.mz_tolerance
@@ -79,7 +99,11 @@ class GroupingWorker(ExperimentWorker):
 
     def tolerance_check(self):
         if self.config.model_ccs is not None:
+            if self.config.isotope_error == 0:
+                return self.within_tolerance_3d_no_isotope
             return self.within_tolerance_3d
+        if self.config.isotope_error == 0:
+            return self.within_tolerance_2d_no_isotope
         return self.within_tolerance_2d
 
     def kdtree(self, batch: int, isotope: int) -> cKDTree:
@@ -144,6 +168,23 @@ class GroupingWorker(ExperimentWorker):
         # format PID as str because it can be None if called from a non-multiprocessing context
         logger.debug("Batch idx %d, offset %d, PID %s", batch, offset, self.pid)
 
+        radius = self.config.mz_tolerance * np.sqrt(self.mzrt.shape[1])
+        if self.config.isotope_error == 0:
+            neighbors = self.kdtree(batch, 0).query_ball_tree(self.trees[0], r=radius)
+            for x, indices in enumerate(neighbors):
+                matches = []
+                scores = []
+                j = x + offset
+                for i in indices:
+                    if i < j and j >= self.previous_end and self.within_tolerance(i, j):
+                        score = self.score_pair(i, j)
+                        if score >= self.config.score_threshold:
+                            matches.append(i)
+                            scores.append(score)
+                if matches:
+                    yield self.encode_result(j, matches, scores)
+            return
+
         neighbors = []
         subtrees = []
         for isotope2 in range(self.config.isotope_error + 1):
@@ -152,11 +193,7 @@ class GroupingWorker(ExperimentWorker):
 
         for tree in self.trees:
             for subtree in subtrees:
-                neighbors.append(
-                    subtree.query_ball_tree(
-                        tree, r=self.config.mz_tolerance * np.sqrt(self.mzrt.shape[1])
-                    )
-                )
+                neighbors.append(subtree.query_ball_tree(tree, r=radius))
 
         for x, zindices in enumerate(zip(*neighbors)):
             matches = []
