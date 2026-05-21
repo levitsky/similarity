@@ -329,6 +329,35 @@ class MzIrtDataFrame(Fixture):
         seq = np.unique(np.loadtxt(input_file, dtype=bytes))
 
         logger.info("Loaded %d unique peptide sequences from %s", len(seq), input_file)
+        if experiment.config.ptms:
+            length = lambda s: len(proforma.ProForma.parse(s.decode("ascii")))
+        else:
+            length = len
+        len_in_bounds = np.array(
+            [
+                experiment.config.min_length
+                <= length(s)
+                <= experiment.config.max_length
+                for s in seq
+            ],
+            dtype=bool,
+        )
+        n_out_of_bounds = (~len_in_bounds).sum()
+        if n_out_of_bounds > 0:
+            logger.warning(
+                "%d peptide sequences are out of length bounds [%d, %d] and will be skipped",
+                n_out_of_bounds,
+                experiment.config.min_length,
+                experiment.config.max_length,
+            )
+            logger.debug(
+                "Out of bounds sequences:\n%s",
+                "\n".join(
+                    list(seq[~len_in_bounds][:10].astype(str))
+                    + (["..."] if n_out_of_bounds > 10 else [])
+                ),
+            )
+        seq = seq[len_in_bounds]
 
         ptms = self.has_ptms(experiment)
         if experiment.config.variable_mods or experiment.config.fixed_mods:
