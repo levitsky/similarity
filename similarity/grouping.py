@@ -145,9 +145,13 @@ class GroupingWorker(ExperimentWorker):
         logger.debug("Batch idx %d, offset %d, PID %s", batch, offset, self.pid)
 
         neighbors = []
+        subtrees = []
+        for isotope2 in range(self.config.isotope_error + 1):
+            subtree = self.kdtree(batch, isotope2)
+            subtrees.append(subtree)
+
         for tree in self.trees:
-            for isotope2 in range(self.config.isotope_error + 1):
-                subtree = self.kdtree(batch, isotope2)
+            for subtree in subtrees:
                 neighbors.append(
                     subtree.query_ball_tree(
                         tree, r=self.config.mz_tolerance * np.sqrt(self.mzrt.shape[1])
@@ -225,7 +229,7 @@ class SpectrumGrouping(Fixture):
             names.append("ccs")
         if isotope:
             logger.debug("Applying isotope error of %d to m/z values", isotope)
-            values = df[names].values.astype(np.float32).copy()
+            values = df[names].values.astype(np.float32, copy=True)
             values[:, 0] += (
                 isotope
                 * PROTON_MASS
