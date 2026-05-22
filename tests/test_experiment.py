@@ -4,6 +4,7 @@ import multiprocessing as mp
 import pandas as pd
 import dataclasses
 import tempfile
+from collections import Counter
 from similarity.experiment import Experiment
 from similarity.grouping import GroupingWorker
 from similarity.prediction import MzIrtDataFrame
@@ -59,15 +60,26 @@ def _weightxy(x, y, m=0, n=0.5):
 
 class TestBase(unittest.TestCase):
     test_file = "tests/test_peptides.txt"
+    batch_size = 2
+    mz_tolerance = 1.0
 
     def setUp(self):
-        self.config = Config(input_file=Path(self.test_file), batch_size=2)
+        self.config = Config(
+            input_file=Path(self.test_file),
+            batch_size=self.batch_size,
+            mz_tolerance=self.mz_tolerance,
+        )
         logging.basicConfig(
             level=logging.DEBUG,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             force=True,  # overrides any existing logging config
         )
         self.logger = logging.getLogger(__name__)
+
+
+class ExperimentTest(TestBase):
+    def setUp(self):
+        super().setUp()
         self.correct_scores = sorted(
             [
                 0.847243,
@@ -82,8 +94,6 @@ class TestBase(unittest.TestCase):
             ]
         )
 
-
-class ExperimentTest(TestBase):
     def test_load_peptide_table(self):
         source = pd.DataFrame(
             {
@@ -357,26 +367,23 @@ class SubsetTest(TestBase):
         )
 
 
-class IsotopeErrorTest(unittest.TestCase):
+class IsotopeErrorTest(TestBase):
     test_file = "tests/10k_peptides.txt"
+    batch_size = 256
+    mz_tolerance = 0.02
 
-    @classmethod
-    def setUpClass(cls):
-        cls.config = Config(
-            input_file=Path(cls.test_file),
-            batch_size=256,
-            workers=1,
-        )
-        with Experiment(dataclasses.replace(cls.config, isotope_error=0)) as exp:
-            cls.pairs_iso0 = {(int(i), int(j)) for i, j, _ in exp.score_array}
+    def setUp(self):
+        super().setUp()
+        with Experiment(dataclasses.replace(self.config, isotope_error=0)) as exp:
+            self.pairs_iso0 = {(int(i), int(j)) for i, j, _ in exp.score_array}
 
-        with Experiment(dataclasses.replace(cls.config, isotope_error=2)) as exp:
-            cls.pairs_iso2 = {(int(i), int(j)) for i, j, _ in exp.score_array}
+        with Experiment(dataclasses.replace(self.config, isotope_error=2)) as exp:
+            self.pairs_iso2 = {(int(i), int(j)) for i, j, _ in exp.score_array}
             # Copy out of shared memory so values stay valid after Experiment cleanup.
-            cls.peptide_mz = exp.peptides["m/z"].to_numpy(copy=True)
-            cls.peptide_charges = exp.peptides["precursor_charges"].to_numpy(copy=True)
+            self.peptide_mz = exp.peptides["m/z"].to_numpy(copy=True)
+            self.peptide_charges = exp.peptides["precursor_charges"].to_numpy(copy=True)
 
-        cls.extra_pairs = cls.pairs_iso2 - cls.pairs_iso0
+        self.extra_pairs = self.pairs_iso2 - self.pairs_iso0
 
     @staticmethod
     def _best_isotope_match(i, j, mz, charges, mz_tolerance, max_isotope):
@@ -411,7 +418,7 @@ class IsotopeErrorTest(unittest.TestCase):
         )
 
         mz_tolerance = self.config.mz_tolerance
-        isotope_shifted_pairs = 0
+        isotope_shifted_pairs = Counter()
 
         for i, j in self.extra_pairs:
             no_isotope_delta = abs(self.peptide_mz[i] - self.peptide_mz[j])
@@ -433,20 +440,29 @@ class IsotopeErrorTest(unittest.TestCase):
                 match,
                 f"Pair ({i}, {j}) should be explainable by isotope shifts up to 2",
             )
-            if match is None:
-                continue
             _, isotope1, isotope2 = match
             self.assertTrue(
                 isotope1 > 0 or isotope2 > 0,
                 f"Pair ({i}, {j}) should require isotope 1 or 2 shift",
             )
-            isotope_shifted_pairs += 1
+            isotope_shifted_pairs[abs(isotope1 - isotope2)] += 1
 
-        self.assertGreater(
-            isotope_shifted_pairs,
-            0,
-            "Expected at least one additional pair explained by isotope shifts",
+        self.logger.debug(
+            "Isotope-shifted pairs by isotope difference: %s",
+            dict(isotope_shifted_pairs),
         )
+        for isotope_diff in range(1, 3):
+            count = isotope_shifted_pairs[isotope_diff]
+            self.logger.debug(
+                "Isotope difference of %d accounts for %d additional pairs",
+                isotope_diff,
+                count,
+            )
+            self.assertGreater(
+                count,
+                0,
+                f"Expected some pairs with isotope difference of {isotope_diff} to be added",
+            )
 
 
 class EquivalenceTest(TestBase):

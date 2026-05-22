@@ -47,8 +47,12 @@ class GroupingWorker(ExperimentWorker):
         arr = self.mzrt
         mz_tol = self.config.mz_tolerance
         charge = self.charges[i]
+        # make sure delta_mz is positive
+        if i < j:
+            i, j = j, i
         delta_mz = arr[i, 0] - arr[j, 0]
-        if abs(delta_mz) <= mz_tol:
+
+        if delta_mz <= mz_tol:
             return True
 
         # For equal charge, only isotope-difference matters: (iso1 - iso2).
@@ -56,8 +60,7 @@ class GroupingWorker(ExperimentWorker):
         # covering both orderings (iso1 > iso2 and iso1 < iso2).
         shift = PROTON_MASS / charge
         return any(
-            abs(delta_mz + delta_isotope * shift) <= mz_tol
-            or abs(delta_mz - delta_isotope * shift) <= mz_tol
+            abs(delta_mz - delta_isotope * shift) <= mz_tol
             for delta_isotope in range(1, self.config.isotope_error + 1)
         )
 
