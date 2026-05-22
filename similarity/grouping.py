@@ -4,6 +4,7 @@ from scipy.spatial import cKDTree
 import numpy as np
 import logging
 import multiprocessing as mp
+import itertools
 from .utils.abc import Fixture
 from .utils.utils import ExperimentWorker
 from .utils.config import PROTON_MASS
@@ -37,74 +38,75 @@ class GroupingWorker(ExperimentWorker):
     mzrt: np.ndarray
     previous_end: int
 
-    def within_tolerance_2d_no_isotope(self, i: int, j: int) -> bool:
+    def within_mz_tolerance_no_isotope(self, i: int, j: int) -> bool:
         arr = self.mzrt
         mz_tol = self.config.mz_tolerance
-        irt_tol = self.config.irt_tolerance
-        return (
-            abs(arr[i, 0] - arr[j, 0]) <= mz_tol
-            and abs(arr[i, 1] - arr[j, 1]) <= irt_tol
+        return abs(arr[i, 0] - arr[j, 0]) <= mz_tol
+
+    def within_mz_tolerance_equal_charge(self, i: int, j: int) -> bool:
+        arr = self.mzrt
+        mz_tol = self.config.mz_tolerance
+        charge = self.charges[i]
+        delta_mz = arr[i, 0] - arr[j, 0]
+        if abs(delta_mz) <= mz_tol:
+            return True
+
+        # For equal charge, only isotope-difference matters: (iso1 - iso2).
+        # This avoids redundant checks like (1, 1), (2, 2), ... while still
+        # covering both orderings (iso1 > iso2 and iso1 < iso2).
+        shift = PROTON_MASS / charge
+        return any(
+            abs(delta_mz + delta_isotope * shift) <= mz_tol
+            or abs(delta_mz - delta_isotope * shift) <= mz_tol
+            for delta_isotope in range(1, self.config.isotope_error + 1)
         )
 
-    def within_tolerance_3d_no_isotope(self, i: int, j: int) -> bool:
+    def within_mz_tolerance_different_charge(self, i: int, j: int) -> bool:
         arr = self.mzrt
         mz_tol = self.config.mz_tolerance
-        irt_tol = self.config.irt_tolerance
-        ccs_rtol = self.config.ccs_rtolerance
-        return (
-            abs(arr[i, 0] - arr[j, 0]) <= mz_tol
-            and abs(arr[i, 1] - arr[j, 1]) <= irt_tol
-            and abs(arr[i, 2] - arr[j, 2]) <= ccs_rtol * max(arr[i, 2], arr[j, 2])
-        )
+        return any(
+            abs(
+                arr[i, 0]
+                + isotope1 * PROTON_MASS / self.charges[i]
+                - arr[j, 0]
+                - isotope2 * PROTON_MASS / self.charges[j]
+            )
+            <= mz_tol
+            for isotope1, isotope2 in itertools.product(
+                range(self.config.isotope_error + 1), repeat=2
+            )
+        )  # (0, 0) is included, so this also covers the case where no isotope error is applied
+
+    def within_mz_tolerance_with_isotopes(self, i: int, j: int) -> bool:
+        if self.charges[i] == self.charges[j]:
+            return self.within_mz_tolerance_equal_charge(i, j)
+        else:
+            return self.within_mz_tolerance_different_charge(i, j)
 
     def within_tolerance_2d(self, i: int, j: int) -> bool:
         arr = self.mzrt
-        mz_tol = self.config.mz_tolerance
         irt_tol = self.config.irt_tolerance
-        return (
-            any(
-                abs(
-                    arr[i, 0]
-                    + isotope1 * PROTON_MASS / self.charges[i]
-                    - arr[j, 0]
-                    - isotope2 * PROTON_MASS / self.charges[j]
-                )
-                <= mz_tol
-                for isotope1 in range(self.config.isotope_error + 1)
-                for isotope2 in range(self.config.isotope_error + 1)
-            )
-            and abs(arr[i, 1] - arr[j, 1]) <= irt_tol
-        )
+        return self.within_mz_tolerance(i, j) and abs(arr[i, 1] - arr[j, 1]) <= irt_tol
 
     def within_tolerance_3d(self, i: int, j: int) -> bool:
         arr = self.mzrt
-        mz_tol = self.config.mz_tolerance
         irt_tol = self.config.irt_tolerance
         ccs_rtol = self.config.ccs_rtolerance
         return (
-            any(
-                abs(
-                    arr[i, 0]
-                    + isotope1 * PROTON_MASS / self.charges[i]
-                    - arr[j, 0]
-                    - isotope2 * PROTON_MASS / self.charges[j]
-                )
-                <= mz_tol
-                for isotope1 in range(self.config.isotope_error + 1)
-                for isotope2 in range(self.config.isotope_error + 1)
-            )
+            self.within_mz_tolerance(i, j)
             and abs(arr[i, 1] - arr[j, 1]) <= irt_tol
             and abs(arr[i, 2] - arr[j, 2]) <= ccs_rtol * max(arr[i, 2], arr[j, 2])
         )
 
     def tolerance_check(self):
         if self.config.model_ccs is not None:
-            if self.config.isotope_error == 0:
-                return self.within_tolerance_3d_no_isotope
             return self.within_tolerance_3d
-        if self.config.isotope_error == 0:
-            return self.within_tolerance_2d_no_isotope
         return self.within_tolerance_2d
+
+    def mz_tolerance_check(self):
+        if self.config.isotope_error == 0:
+            return self.within_mz_tolerance_no_isotope
+        return self.within_mz_tolerance_with_isotopes
 
     def kdtree(self, batch: int, isotope: int) -> cKDTree:
         bsize = self.config.batch_size
@@ -214,6 +216,7 @@ class GroupingWorker(ExperimentWorker):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.within_tolerance = self.tolerance_check()
+        self.within_mz_tolerance = self.mz_tolerance_check()
 
     def run(self) -> None:
         logger.debug("Worker started with PID %d", self.pid)
