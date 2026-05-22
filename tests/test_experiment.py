@@ -12,6 +12,7 @@ from similarity.utils.config import (
     KoinaIntensityModel,
     KoinaRTModel,
     KoinaCCSModel,
+    PROTON_MASS,
 )
 from similarity.utils.cache import CacheType
 from similarity.utils.spectrum_collection import SpectrumCollectionType
@@ -353,6 +354,98 @@ class SubsetTest(TestBase):
         self.assertTrue((combined["j"] == self.correct_scores["j"]).all())
         self.assertTrue(
             np.allclose(combined["score"], self.correct_scores["score"], atol=1e-3)
+        )
+
+
+class IsotopeErrorTest(unittest.TestCase):
+    test_file = "tests/10k_peptides.txt"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.config = Config(
+            input_file=Path(cls.test_file),
+            batch_size=256,
+            workers=1,
+        )
+        with Experiment(dataclasses.replace(cls.config, isotope_error=0)) as exp:
+            cls.pairs_iso0 = {(int(i), int(j)) for i, j, _ in exp.score_array}
+
+        with Experiment(dataclasses.replace(cls.config, isotope_error=2)) as exp:
+            cls.pairs_iso2 = {(int(i), int(j)) for i, j, _ in exp.score_array}
+            # Copy out of shared memory so values stay valid after Experiment cleanup.
+            cls.peptide_mz = exp.peptides["m/z"].to_numpy(copy=True)
+            cls.peptide_charges = exp.peptides["precursor_charges"].to_numpy(copy=True)
+
+        cls.extra_pairs = cls.pairs_iso2 - cls.pairs_iso0
+
+    @staticmethod
+    def _best_isotope_match(i, j, mz, charges, mz_tolerance, max_isotope):
+        best = None
+        for isotope1 in range(max_isotope + 1):
+            for isotope2 in range(max_isotope + 1):
+                delta = abs(
+                    mz[i]
+                    + isotope1 * PROTON_MASS / charges[i]
+                    - mz[j]
+                    - isotope2 * PROTON_MASS / charges[j]
+                )
+                if best is None or delta < best[0]:
+                    best = (delta, isotope1, isotope2)
+        if best is None:
+            return None
+        if best[0] <= mz_tolerance:
+            return best
+        return None
+
+    def test_isotope_error_two_superset_of_zero(self):
+        self.assertTrue(
+            self.pairs_iso0.issubset(self.pairs_iso2),
+            "All pairs found with isotope_error=0 should also be present with isotope_error=2",
+        )
+
+    def test_isotope_error_adds_isotope_shifted_pairs(self):
+        self.assertGreater(
+            len(self.extra_pairs),
+            0,
+            "Expected additional pairs when isotope_error is increased from 0 to 2",
+        )
+
+        mz_tolerance = self.config.mz_tolerance
+        isotope_shifted_pairs = 0
+
+        for i, j in self.extra_pairs:
+            no_isotope_delta = abs(self.peptide_mz[i] - self.peptide_mz[j])
+            self.assertGreater(
+                no_isotope_delta,
+                mz_tolerance,
+                "Additional pairs should be outside no-isotope m/z tolerance",
+            )
+
+            match = self._best_isotope_match(
+                i,
+                j,
+                self.peptide_mz,
+                self.peptide_charges,
+                mz_tolerance,
+                max_isotope=2,
+            )
+            self.assertIsNotNone(
+                match,
+                f"Pair ({i}, {j}) should be explainable by isotope shifts up to 2",
+            )
+            if match is None:
+                continue
+            _, isotope1, isotope2 = match
+            self.assertTrue(
+                isotope1 > 0 or isotope2 > 0,
+                f"Pair ({i}, {j}) should require isotope 1 or 2 shift",
+            )
+            isotope_shifted_pairs += 1
+
+        self.assertGreater(
+            isotope_shifted_pairs,
+            0,
+            "Expected at least one additional pair explained by isotope shifts",
         )
 
 
