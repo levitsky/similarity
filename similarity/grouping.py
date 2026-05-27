@@ -202,7 +202,7 @@ class GroupingWorker(ExperimentWorker):
                         matches.append(i)
                         scores.append(score)
             if matches:
-                yield self.encode_result(j, matches, scores)
+                yield (j, matches, scores)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -233,7 +233,7 @@ class GroupingWorker(ExperimentWorker):
                 )
                 break
             for result in self.process_batch(batch):
-                self.result_queue.put(result)
+                self.result_queue.put(self.encode_result(*result))
             logger.debug(
                 "Finished batch %d of %d in worker %d. Current output queue size: %d",
                 batch + 1,
@@ -404,7 +404,7 @@ class SpectrumGrouping(Fixture):
             def produce_results():
                 for batch in range(nb):
                     for item in pseudoworker.process_batch(batch):
-                        i, matches, scores = GroupingWorker.decode_result(item)
+                        i, matches, scores = item
                         for m, s in zip(matches, scores):
                             yield (i + global_offset, m + global_offset, s)
 
