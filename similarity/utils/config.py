@@ -184,11 +184,12 @@ class Config(BaseConfig):
     model_intensity: KoinaIntensityModel = KoinaIntensityModel.Prosit_2020_intensity_HCD
     model_irt: KoinaRTModel = KoinaRTModel.Prosit_2019_irt
     model_ccs: KoinaCCSModel | None = None
-    mz_tolerance: float = 1.0
+    precursor_mz_tolerance: float = 0.0
+    precursor_mz_ppm: float = 10.0
     isotope_error: int = 0
     irt_tolerance: float = 5.0
-    peak_tolerance: float = 0.0
-    peak_ppm: float = 10.0
+    fragment_mz_tolerance: float = 0.0
+    fragment_mz_ppm: float = 10.0
     ccs_rtolerance: float = 0.02
     nonstandard_aminoacids: bool = False
     ptms: bool = False
@@ -216,16 +217,13 @@ class Config(BaseConfig):
         if self.isotopes_overlap:
             logger.warning(
                 "m/z tolerance (%.2f) is large enough for isotope windows to overlap (spacing %.2f).",
-                self.mz_tolerance,
+                self.precursor_mz_tolerance,
                 PROTON_MASS / self.max_charge,
             )
 
     @property
-    def max_mz_difference(self) -> float:
-        return self.mz_tolerance + PROTON_MASS * self.isotope_error / self.min_charge
-
-    @property
     def isotopes_overlap(self) -> bool:
-        return self.isotope_error != 0 and self.mz_tolerance >= PROTON_MASS / (
-            2 * self.max_charge
+        return (
+            self.isotope_error != 0
+            and self.precursor_mz_tolerance >= PROTON_MASS / (2 * self.max_charge)
         )

@@ -67,7 +67,7 @@ class TestBase(unittest.TestCase):
         self.config = Config(
             input_file=Path(self.test_file),
             batch_size=self.batch_size,
-            mz_tolerance=self.mz_tolerance,
+            precursor_mz_tolerance=self.mz_tolerance,
         )
         logging.basicConfig(
             level=logging.DEBUG,
@@ -266,7 +266,7 @@ class ExperimentTest(TestBase):
             self.config,
             batch_size=512,
             isotope_error=1,
-            mz_tolerance=0.3,
+            precursor_mz_tolerance=0.1,
             max_charge=2,
             score_threshold=0.0,
             workers=1,
@@ -356,7 +356,6 @@ class SubsetTest(TestBase):
         runner = ExperimentRunner(
             config=config,
             peptide_table="tests/peptides_subset.tsv",
-            jobs=2,
             create_peptide_table=True,
             array_file="tests/scores_subset_{}.npy",
             score_df_file="tests/scores_subset_{}.tsv",
@@ -469,7 +468,7 @@ class IsotopeErrorTest(TestBase):
             "Expected additional pairs when isotope_error is increased from 0 to 2",
         )
 
-        mz_tolerance = self.config.mz_tolerance
+        mz_tolerance = self.config.precursor_mz_tolerance
         isotope_shifted_pairs = Counter()
 
         for i, j in self.extra_pairs:
@@ -540,8 +539,8 @@ class EquivalenceTest(TestBase):
                     idx1, idx2 = GroupingWorker.match_peaks(
                         mz1,
                         mz2,
-                        atol=0.1,
-                        rtol=0.0005,
+                        atol=self.config.fragment_mz_tolerance,
+                        rtol=self.config.fragment_mz_ppm / 1e6,
                     )
                     self.logger.debug("Matched indices: %s and %s", idx1, idx2)
                     self.logger.debug(
@@ -551,7 +550,8 @@ class EquivalenceTest(TestBase):
                     )
 
                     matcher = joinPeaks(
-                        tolerance=self.config.peak_tolerance, ppm=self.config.peak_ppm
+                        tolerance=self.config.fragment_mz_tolerance,
+                        ppm=self.config.fragment_mz_ppm / 1e6,
                     )
                     x_df = (
                         pd.DataFrame({"mz": mz1, "intensities": intensities1})
@@ -616,7 +616,8 @@ class EquivalenceTest(TestBase):
             for i, j, score in exp.score_array:
                 with self.subTest(pair=(i, j)):
                     matcher = joinPeaks(
-                        tolerance=self.config.peak_tolerance, ppm=self.config.peak_ppm
+                        tolerance=self.config.fragment_mz_tolerance,
+                        ppm=self.config.fragment_mz_ppm / 1e6,
                     )
                     x_df = (
                         pd.DataFrame(
@@ -644,8 +645,8 @@ class EquivalenceTest(TestBase):
                     idx1, idx2 = GroupingWorker.match_peaks(
                         x_df["mz"].values,
                         y_df["mz"].values,
-                        atol=self.config.peak_tolerance,
-                        rtol=self.config.peak_ppm / 1e6,
+                        atol=self.config.fragment_mz_tolerance,
+                        rtol=self.config.fragment_mz_ppm / 1e6,
                     )
                     newscore = GroupingWorker.similarity_score(
                         x_df["intensities"].values,

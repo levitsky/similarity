@@ -5,6 +5,7 @@ import numpy as np
 from multiprocessing.shared_memory import SharedMemory
 from koinapy import Koina
 from .utils.abc import Fixture, IndexType
+from .utils.cache.common import SpectrumCache
 from pyteomics import cmass, auxiliary as aux, proforma, parser
 import logging
 from tqdm import trange
@@ -35,7 +36,7 @@ class PredictedSpectrumCollection(Fixture):
         return result
 
     def evaluate(self, experiment: "Experiment") -> "SpectrumCollection":
-        index = experiment.cache[IndexType.INTENSITY]
+        index = cast("SpectrumCache | None", experiment.cache[IndexType.INTENSITY])
         collection = experiment.config.spectrum_collection.value(experiment)
         if index is not None:
             collection.fill_from_cache(experiment, index)
@@ -76,7 +77,7 @@ class PredictedSpectrumCollection(Fixture):
 
 
 class Offsets(Fixture):
-    def __set__(self, instance: "Experiment", value: Sequence[tuple[int, int]]):
+    def __set__(self, instance: "Experiment", value: Sequence[tuple[int, int]]):  # type: ignore
         self._data[instance] = value
 
     def evaluate(self, experiment: "Experiment") -> Any:
@@ -219,9 +220,12 @@ class MzIrtDataFrame(Fixture):
 
         if experiment.config.subsets > 1:
             logger.info(
-                "Subset processing mode. Assuming peptide table is sorted by m/z and contains the complete peptide set."
+                "Subset processing mode. Assuming peptide table is sorted by irt and contains the complete peptide set."
             )
-            offsets = self.subset_offsets(experiment, df["m/z"])
+            offsets = self.subset_offsets(
+                experiment, cast(np.ndarray, df["irt"].values)
+            )
+            experiment.offsets = offsets
             start, end = offsets[experiment.config.subset - 1]
             logger.info(
                 "Loading subset %d (rows %d to %d) from peptide table %s with m/z range %.4f - %.4f",
@@ -269,7 +273,7 @@ class MzIrtDataFrame(Fixture):
         return df
 
     def subset_offsets(
-        self, experiment: "Experiment", mz_array: np.ndarray
+        self, experiment: "Experiment", irt_array: np.ndarray
     ) -> list[tuple[int, int]]:
         """
         Returns the offsets for each subset. When the whole dataset is too big to be processed at once,
@@ -277,18 +281,18 @@ class MzIrtDataFrame(Fixture):
         This function calculates the offsets for each subset.
         """
         c = experiment.config
+        values = irt_array
         dim, tol = (
-            "m/z",
-            c.max_mz_difference,
+            "irt",
+            c.irt_tolerance,
         )  # slicing axis and tolerance for subset overlap
-        nvalues = len(mz_array)
+        nvalues = len(values)
         if c.subsets > nvalues:
             raise ValueError(
                 f"Number of subsets ({c.subsets}) cannot exceed number of peptides ({nvalues})"
             )
 
         bsize = nvalues // c.subsets
-        values = mz_array
 
         # Nominal boundaries without overlap: exactly c.subsets chunks, full coverage.
         ends = [((k + 1) * nvalues) // c.subsets for k in range(c.subsets)]
@@ -317,7 +321,6 @@ class MzIrtDataFrame(Fixture):
             previous_start = start
 
         logger.debug("Calculated subset offsets: %s ... %s", offsets[:3], offsets[-3:])
-        experiment.offsets = offsets
         return offsets
 
     def has_ptms(self, experiment: "Experiment") -> bool:
@@ -441,22 +444,26 @@ class MzIrtDataFrame(Fixture):
                 peptide.decode("ascii"), charge=charge
             )
 
-    def mz_array(self, experiment: "Experiment", peptides: np.ndarray) -> np.ndarray:
+    def mz_array(
+        self, experiment: "Experiment", peptides: np.ndarray, out: np.ndarray
+    ) -> None:
         """
         Calculate m/z values for all peptides and charge states.
         If multiple charges are configured, the output will be longer than the input.
         """
         logger.info("Calculating m/z values for all peptides and charge states...")
         mz_calc = self.mz_calculator(experiment)
-        out = []
-        for charge in range(
-            experiment.config.min_charge, experiment.config.max_charge + 1
+        npeptides = len(peptides)
+
+        for i, charge in enumerate(
+            range(experiment.config.min_charge, experiment.config.max_charge + 1)
         ):
-            out.extend(mz_calc(peptide, charge) for peptide in peptides)
+            out[i * npeptides : (i + 1) * npeptides] = [
+                mz_calc(peptide, charge) for peptide in peptides
+            ]
         logger.debug(
             "%d m/z values calculated, samples: %s and %s", len(out), out[:5], out[-5:]
         )
-        return np.array(out, dtype=np.float32)
 
     def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
         if experiment.config.subsets > 1 and experiment.config.subset == 0:
@@ -479,42 +486,7 @@ class MzIrtDataFrame(Fixture):
         nprecursors = npeptides * ncharges
         logger.info("%d total precursors to analyze", nprecursors)
 
-        mzarr = self.mz_array(experiment, seq)
-        sort_idx = np.argsort(mzarr)
-        mzarr = mzarr[sort_idx]
-        if experiment.config.subsets > 1:
-            offsets = self.subset_offsets(experiment, mzarr)
-            logger.info(
-                "Dataset will be processed in %d subsets with offsets %s",
-                experiment.config.subsets,
-                offsets,
-            )
-            idx_start, idx_end = offsets[experiment.config.subset - 1]
-            logger.info(
-                "Processing subset %d (precursors %d to %d of %d) with m/z range %.4f - %.4f",
-                experiment.config.subset,
-                idx_start + 1,
-                idx_end,
-                len(mzarr),
-                mzarr[idx_start],
-                mzarr[idx_end - 1],
-            )
-        else:
-            logger.info("Processing all %d precursors", nprecursors)
-            idx_start, idx_end = 0, len(mzarr)
-
-        subset_size = idx_end - idx_start
-
-        seq_idx = sort_idx[idx_start:idx_end] % npeptides
-        seq_array = self.shared_array(
-            experiment, "peptide_sequences", shape=(subset_size,), dtype=seq.dtype
-        )
-        seq_array[:] = seq[seq_idx]
-
-        mzrt_shape = (subset_size, 3 if experiment.config.model_ccs is not None else 2)
-
-        mzrt = self.shared_array(experiment, "mzrt", shape=mzrt_shape, dtype=np.float32)
-        mzrt[:] = np.nan
+        irt_array = np.empty(npeptides, dtype=np.float32)
         if (
             experiment.config.cache_conf
             and experiment.config.cache_conf.cache_properties
@@ -522,31 +494,70 @@ class MzIrtDataFrame(Fixture):
             index = experiment.cache[IndexType.IRT]
         else:
             index = None
-        # after the addition of subsets, seq_array can have repeated sequences (due to different charges)
-        # requesting RT predictions is slightly redundant but is left for simplicity
-        # TODO: optimize
+
         self.get_predictions(
             "irt",
             index,
-            pd.DataFrame({"peptide_sequences": seq_array}, copy=False),
-            mzrt[:, 1],
+            pd.DataFrame({"peptide_sequences": seq}, copy=False),
+            irt_array,
             experiment,
         )
-        logger.debug("Predicted iRT values:\n%s", mzrt[:10, 1])
+        logger.debug("Predicted iRT values: %s", irt_array[:10])
+        sort_idx = np.argsort(irt_array)
+        irt_array = irt_array[sort_idx]
+        if experiment.config.subsets > 1:
+            offsets = self.subset_offsets(experiment, irt_array)
+            logger.debug(
+                "Configured %d subsets with offsets %s",
+                experiment.config.subsets,
+                offsets,
+            )
+            idx_start, idx_end = offsets[experiment.config.subset - 1]
+            logger.info(
+                "Processing subset %d of %d (precursors %d to %d of %d) with irt range %.4f - %.4f",
+                experiment.config.subset,
+                experiment.config.subsets,
+                idx_start + 1,
+                idx_end,
+                len(irt_array),
+                irt_array[idx_start],
+                irt_array[idx_end - 1],
+            )
+            experiment.offsets = [
+                (start * ncharges, end * ncharges) for start, end in offsets
+            ]
+            logger.debug(
+                "Calculated precursor offsets for all subsets: %s ... %s",
+                experiment.offsets[:3],
+                experiment.offsets[-3:],
+            )
+        else:
+            logger.info("Processing all %d precursors", nprecursors)
+            idx_start, idx_end = 0, len(irt_array)
+
+        subset_size = (idx_end - idx_start) * ncharges
+        seq = seq[sort_idx[idx_start:idx_end]]
+        irt_array = irt_array[idx_start:idx_end]
+
+        seq_array = self.shared_array(
+            experiment, "peptide_sequences", shape=(subset_size,), dtype=seq.dtype
+        )
+
+        mzrt_shape = (subset_size, 3 if experiment.config.model_ccs is not None else 2)
+        mzrt = self.shared_array(experiment, "mzrt", shape=mzrt_shape, dtype=np.float32)
+        mzrt[:] = np.nan
 
         charge_array = self.shared_array(
             experiment, "precursor_charges", shape=(subset_size,), dtype=np.uint8
         )
 
-        # logger.debug("Sorted indexes: %s", sort_idx[idx_start:idx_end])
-        # logger.debug("Sequence indexes: %s", seq_idx)
-        # logger.debug("Charge indexes: %s", sort_idx[idx_start:idx_end] // npeptides)
-
-        charge_array[:] = np.arange(
-            experiment.config.min_charge,
-            experiment.config.max_charge + 1,
-            dtype=np.uint8,
-        )[sort_idx[idx_start:idx_end] // npeptides]
+        for i in range(ncharges):
+            seq_array[i * len(seq) : (i + 1) * len(seq)] = seq
+            mzrt[i * len(seq) : (i + 1) * len(seq), 1] = irt_array
+            charge_array[i * len(seq) : (i + 1) * len(seq)] = (
+                experiment.config.min_charge + i
+            )
+        self.mz_array(experiment, seq, mzrt[:, 0])
 
         peptide_data = {
             "peptide_sequences": seq_array,
@@ -575,9 +586,11 @@ class MzIrtDataFrame(Fixture):
             )
             peptide_data["ccs"] = mzrt[:, 2]
 
-        mzrt[:, 0] = mzarr[idx_start:idx_end]
-
-        df = pd.DataFrame(peptide_data, copy=False, index=range(idx_start, idx_end))
+        df = pd.DataFrame(
+            peptide_data,
+            copy=False,
+            index=range(idx_start * ncharges, idx_end * ncharges),
+        )
         # the rest of the columns are not in shared memory
         df["collision_energies"] = experiment.config.collision_energy
         if experiment.config.fragmentation_type is not None:

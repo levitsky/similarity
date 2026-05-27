@@ -46,7 +46,7 @@
 - For subset/grouping/prediction changes, run at least:
   - `tests/test_experiment.py` (especially `SubsetTest` cases)
 - If behavior changes intentionally, update or add targeted regression tests rather than broad rewrites.
-- For test runs, use the configured Python interpreter. Check that the system Python is not used.
+- For test runs, use `unittest` with the configured Python interpreter. Check that the system Python is not used.
 
 ## Change style
 - Make minimal, localized edits.
