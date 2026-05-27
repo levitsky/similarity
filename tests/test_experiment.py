@@ -565,6 +565,7 @@ class EquivalenceTest(TestBase):
                     )
                     x_matched, y_matched = matcher.match(x_df, y_df)
                     mask = pd.notna(x_matched["mz"]) & pd.notna(y_matched["mz"])
+                    matched_count = int(mask.sum())
 
                     self.logger.debug(
                         "Matched m/z values using joinPeaks:\n%s and \n%s",
@@ -576,10 +577,7 @@ class EquivalenceTest(TestBase):
                         np.sort(mz1[idx1]),
                         np.sort(mz2[idx2]),
                     )
-                    if (
-                        idx1.size == x_matched.shape[0]
-                        and idx2.size == y_matched.shape[0]
-                    ):
+                    if idx1.size == matched_count and idx2.size == matched_count:
                         self.assertTrue(
                             np.allclose(
                                 x_matched.loc[mask, "mz"].values,
