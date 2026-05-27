@@ -174,22 +174,6 @@ class GroupingWorker(ExperimentWorker):
         logger.debug("Batch idx %d, offset %d, PID %s", batch, offset, self.pid)
 
         radius = self.config.mz_tolerance * np.sqrt(self.mzrt.shape[1])
-        if self.config.isotope_error == 0:
-            neighbors = self.kdtree(batch, 0).query_ball_tree(self.trees[0], r=radius)
-            for x, indices in enumerate(neighbors):
-                matches = []
-                scores = []
-                j = x + offset
-                for i in indices:
-                    if i < j and j >= self.previous_end and self.within_tolerance(i, j):
-                        score = self.score_pair(i, j)
-                        if score >= self.config.score_threshold:
-                            matches.append(i)
-                            scores.append(score)
-                if matches:
-                    yield self.encode_result(j, matches, scores)
-            return
-
         neighbors = []
         subtrees = []
         for isotope2 in range(self.config.isotope_error + 1):
@@ -204,9 +188,13 @@ class GroupingWorker(ExperimentWorker):
             matches = []
             scores = []
             j = x + offset
-            indices = set()
-            for ix in zindices:
-                indices.update(ix)
+            if self.overlap:
+                # if isotopes can overlap, we need to deduplicate the indices from different trees
+                indices = set()
+                for ix in zindices:
+                    indices.update(ix)
+            else:
+                indices = itertools.chain.from_iterable(zindices)
             for i in indices:
                 if i < j and j >= self.previous_end and self.within_tolerance(i, j):
                     score = self.score_pair(i, j)
@@ -220,6 +208,7 @@ class GroupingWorker(ExperimentWorker):
         super().__init__(*args, **kwargs)
         self.within_tolerance = self.tolerance_check()
         self.within_mz_tolerance = self.mz_tolerance_check()
+        self.overlap = self.config.isotopes_overlap
 
     def run(self) -> None:
         logger.debug("Worker started with PID %d", self.pid)

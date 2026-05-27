@@ -6,7 +6,7 @@ import dataclasses
 import tempfile
 from collections import Counter
 from similarity.experiment import Experiment
-from similarity.grouping import GroupingWorker
+from similarity.grouping import GroupingWorker, SpectrumGrouping
 from similarity.prediction import MzIrtDataFrame
 from similarity.utils.config import (
     Config,
@@ -260,6 +260,58 @@ class ExperimentTest(TestBase):
             self.assertEqual(exp.peptides["precursor_charges"].max(), 3)
             self.assertEqual(exp.peptides.shape[0], 56)
             self.assertEqual(exp.score_df.shape[0], 18)
+
+    def test_isotope_scoring_outputs_unique_pairs(self):
+        config = dataclasses.replace(
+            self.config,
+            batch_size=512,
+            isotope_error=1,
+            mz_tolerance=0.3,
+            max_charge=2,
+            score_threshold=0.0,
+            workers=1,
+        )
+
+        class FakeSpectrumCollection:
+            def __getitem__(self, key):
+                mz = np.array([100.0, 200.0], dtype=np.float32)
+                intensities = np.array([1.0, 1.0], dtype=np.float32)
+                return mz, intensities
+
+            def worker_close(self):
+                pass
+
+            def close(self):
+                pass
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            peptide_file = Path(tmpdir) / "peptides.tsv"
+            sequence_file = Path(__file__).with_name("10k_peptides.txt")
+            sequences = np.unique(np.loadtxt(sequence_file, dtype=bytes))[:512]
+            peptide_table = pd.DataFrame(
+                {
+                    "peptide_sequences": sequences,
+                    "precursor_charges": np.full(sequences.shape[0], 2, dtype=np.uint8),
+                    "irt": np.zeros(sequences.shape[0], dtype=np.float32),
+                    "m/z": 500.0
+                    + np.arange(sequences.shape[0], dtype=np.float32) * 0.2,
+                }
+            )
+            peptide_table.to_csv(peptide_file, index=False, sep="\t")
+
+            with Experiment(config, peptide_table=peptide_file) as exp:
+                _ = exp.peptides
+                predicted = type(exp).__dict__["predicted_spectra"]
+                predicted._data[exp] = FakeSpectrumCollection()
+
+                try:
+                    scores = SpectrumGrouping().evaluate(exp)
+                finally:
+                    predicted._data.pop(exp, None)
+
+        pairs = np.stack((scores["i"], scores["j"]), axis=1)
+        unique_pairs = np.unique(pairs, axis=0)
+        self.assertEqual(len(scores), len(unique_pairs))
 
     def test_ptms(self):
         """Test that Experiment can handle peptides with PTMs."""
