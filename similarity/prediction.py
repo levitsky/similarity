@@ -277,7 +277,10 @@ class MzIrtDataFrame(Fixture):
         This function calculates the offsets for each subset.
         """
         c = experiment.config
-        dim, tol = "m/z", c.mz_tolerance  # slicing axis and tolerance for batch overlap
+        dim, tol = (
+            "m/z",
+            c.max_mz_difference,
+        )  # slicing axis and tolerance for subset overlap
         nvalues = len(mz_array)
         if c.subsets > nvalues:
             raise ValueError(

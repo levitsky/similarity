@@ -9,12 +9,14 @@ from .spectrum_collection import SpectrumCollectionType
 from abc import ABC
 from typing import Any, TYPE_CHECKING, get_origin, get_args
 import logging
+from pyteomics.mass.mass import PROTON, nist_mass
 
 if TYPE_CHECKING:
     from dataclasses import Field
 
 
 logger = logging.getLogger(__name__)
+PROTON_MASS = nist_mass[PROTON][0][0]
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,6 +185,7 @@ class Config(BaseConfig):
     model_irt: KoinaRTModel = KoinaRTModel.Prosit_2019_irt
     model_ccs: KoinaCCSModel | None = None
     mz_tolerance: float = 1.0
+    isotope_error: int = 0
     irt_tolerance: float = 5.0
     peak_tolerance: float = 0.0
     peak_ppm: float = 10.0
@@ -210,3 +213,19 @@ class Config(BaseConfig):
             object.__setattr__(
                 self, "cache_conf", CacheConfigType[self.cache.name].value()
             )
+        if self.isotopes_overlap:
+            logger.warning(
+                "m/z tolerance (%.2f) is large enough for isotope windows to overlap (spacing %.2f).",
+                self.mz_tolerance,
+                PROTON_MASS / self.max_charge,
+            )
+
+    @property
+    def max_mz_difference(self) -> float:
+        return self.mz_tolerance + PROTON_MASS * self.isotope_error / self.min_charge
+
+    @property
+    def isotopes_overlap(self) -> bool:
+        return self.isotope_error != 0 and self.mz_tolerance >= PROTON_MASS / (
+            2 * self.max_charge
+        )

@@ -4,8 +4,10 @@ from scipy.spatial import cKDTree
 import numpy as np
 import logging
 import multiprocessing as mp
+import itertools
 from .utils.abc import Fixture
 from .utils.utils import ExperimentWorker
+from .utils.config import PROTON_MASS
 from .prediction import MzIrtDataFrame
 from ._match_peaks import match_peaks_sorted, similarity_score as c_similarity_score
 
@@ -23,7 +25,7 @@ class GroupingWorker(ExperimentWorker):
     """
 
     config: "Config"
-    tree: cKDTree
+    trees: list[cKDTree]
     radius: float
     shape: tuple[int, ...]
     nbatches: int
@@ -36,22 +38,65 @@ class GroupingWorker(ExperimentWorker):
     mzrt: np.ndarray
     previous_end: int
 
-    def within_tolerance_2d(self, i: int, j: int) -> bool:
+    def within_mz_tolerance_no_isotope(self, i: int, j: int) -> bool:
         arr = self.mzrt
         mz_tol = self.config.mz_tolerance
-        irt_tol = self.config.irt_tolerance
-        return (
-            abs(arr[i, 0] - arr[j, 0]) <= mz_tol
-            and abs(arr[i, 1] - arr[j, 1]) <= irt_tol
+        return abs(arr[i, 0] - arr[j, 0]) <= mz_tol
+
+    def within_mz_tolerance_equal_charge(self, i: int, j: int) -> bool:
+        arr = self.mzrt
+        mz_tol = self.config.mz_tolerance
+        charge = self.charges[i]
+        # make sure delta_mz is positive
+        if i < j:
+            i, j = j, i
+        delta_mz = arr[i, 0] - arr[j, 0]
+
+        if delta_mz <= mz_tol:
+            return True
+
+        # For equal charge, only isotope-difference matters: (iso1 - iso2).
+        # This avoids redundant checks like (1, 1), (2, 2), ... while still
+        # covering both orderings (iso1 > iso2 and iso1 < iso2).
+        shift = PROTON_MASS / charge
+        return any(
+            abs(delta_mz - delta_isotope * shift) <= mz_tol
+            for delta_isotope in range(1, self.config.isotope_error + 1)
         )
+
+    def within_mz_tolerance_different_charge(self, i: int, j: int) -> bool:
+        arr = self.mzrt
+        mz_tol = self.config.mz_tolerance
+        return any(
+            abs(
+                arr[i, 0]
+                + isotope1 * PROTON_MASS / self.charges[i]
+                - arr[j, 0]
+                - isotope2 * PROTON_MASS / self.charges[j]
+            )
+            <= mz_tol
+            for isotope1, isotope2 in itertools.product(
+                range(self.config.isotope_error + 1), repeat=2
+            )
+        )  # (0, 0) is included, so this also covers the case where no isotope error is applied
+
+    def within_mz_tolerance_with_isotopes(self, i: int, j: int) -> bool:
+        if self.charges[i] == self.charges[j]:
+            return self.within_mz_tolerance_equal_charge(i, j)
+        else:
+            return self.within_mz_tolerance_different_charge(i, j)
+
+    def within_tolerance_2d(self, i: int, j: int) -> bool:
+        arr = self.mzrt
+        irt_tol = self.config.irt_tolerance
+        return self.within_mz_tolerance(i, j) and abs(arr[i, 1] - arr[j, 1]) <= irt_tol
 
     def within_tolerance_3d(self, i: int, j: int) -> bool:
         arr = self.mzrt
-        mz_tol = self.config.mz_tolerance
         irt_tol = self.config.irt_tolerance
         ccs_rtol = self.config.ccs_rtolerance
         return (
-            abs(arr[i, 0] - arr[j, 0]) <= mz_tol
+            self.within_mz_tolerance(i, j)
             and abs(arr[i, 1] - arr[j, 1]) <= irt_tol
             and abs(arr[i, 2] - arr[j, 2]) <= ccs_rtol * max(arr[i, 2], arr[j, 2])
         )
@@ -61,10 +106,22 @@ class GroupingWorker(ExperimentWorker):
             return self.within_tolerance_3d
         return self.within_tolerance_2d
 
-    def kdtree(self, batch: int) -> cKDTree:
+    def mz_tolerance_check(self):
+        if self.config.isotope_error == 0:
+            return self.within_mz_tolerance_no_isotope
+        return self.within_mz_tolerance_with_isotopes
+
+    def kdtree(self, batch: int, isotope: int) -> cKDTree:
         bsize = self.config.batch_size
-        arr = self.mzrt[batch * bsize : (batch + 1) * bsize] * self.scaling_factors
-        return cKDTree(arr)
+        arr = self.mzrt[batch * bsize : (batch + 1) * bsize]
+        if isotope:
+            arr = arr.copy()
+            arr[:, 0] += (
+                isotope
+                * PROTON_MASS
+                / self.charges[batch * bsize : (batch + 1) * bsize]
+            )
+        return cKDTree(arr * self.scaling_factors)
 
     @staticmethod
     def match_peaks(mz1: np.ndarray, mz2: np.ndarray, atol: float, rtol: float):
@@ -111,20 +168,33 @@ class GroupingWorker(ExperimentWorker):
     ) -> Iterable[tuple[int, list[int], list[float]]]:
 
         logger.info("Processing batch %d of %d...", batch + 1, self.nbatches)
-        subtree = self.kdtree(batch)
 
         offset = batch * self.config.batch_size
         # format PID as str because it can be None if called from a non-multiprocessing context
         logger.debug("Batch idx %d, offset %d, PID %s", batch, offset, self.pid)
 
-        neighbors = subtree.query_ball_tree(
-            self.tree, r=self.config.mz_tolerance * np.sqrt(self.mzrt.shape[1])
-        )
+        radius = self.config.mz_tolerance * np.sqrt(self.mzrt.shape[1])
+        neighbors = []
+        subtrees = []
+        for isotope2 in range(self.config.isotope_error + 1):
+            subtree = self.kdtree(batch, isotope2)
+            subtrees.append(subtree)
 
-        for x, indices in enumerate(neighbors):
+        for tree in self.trees:
+            for subtree in subtrees:
+                neighbors.append(subtree.query_ball_tree(tree, r=radius))
+
+        for x, zindices in enumerate(zip(*neighbors)):
             matches = []
             scores = []
             j = x + offset
+            if self.overlap:
+                # if isotopes can overlap, we need to deduplicate the indices from different trees
+                indices = set()
+                for ix in zindices:
+                    indices.update(ix)
+            else:
+                indices = itertools.chain.from_iterable(zindices)
             for i in indices:
                 if i < j and j >= self.previous_end and self.within_tolerance(i, j):
                     score = self.score_pair(i, j)
@@ -137,6 +207,8 @@ class GroupingWorker(ExperimentWorker):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.within_tolerance = self.tolerance_check()
+        self.within_mz_tolerance = self.mz_tolerance_check()
+        self.overlap = self.config.isotopes_overlap
 
     def run(self) -> None:
         logger.debug("Worker started with PID %d", self.pid)
@@ -179,13 +251,26 @@ class GroupingWorker(ExperimentWorker):
 class SpectrumGrouping(Fixture):
     max_queue_size: int = 100000
 
-    def kdtree(self, experiment: "Experiment", factors: np.ndarray) -> cKDTree:
+    def kdtree(
+        self, experiment: "Experiment", factors: np.ndarray, isotope: int = 0
+    ) -> cKDTree:
         """Build a cKDTree from the peptide DataFrame, applying the scaling factors to each dimension."""
         df = experiment.peptides
         names = ["m/z", "irt"]
         if experiment.config.model_ccs is not None:
             names.append("ccs")
-        return cKDTree(df[names].values * factors)
+        if isotope:
+            logger.debug("Applying isotope error of %d to m/z values", isotope)
+            values = df[names].values.astype(np.float32, copy=True)
+            values[:, 0] += (
+                isotope
+                * PROTON_MASS
+                / df["precursor_charges"].values.astype(np.float32)
+            )
+        else:
+            # avoid copying if no isotope error is applied
+            values = df[names].values
+        return cKDTree(values * factors)
 
     def scaling_factors(self, experiment: "Experiment") -> np.ndarray:
         """Calculate scaling factors for each dimension based on the configured tolerances.
@@ -215,10 +300,18 @@ class SpectrumGrouping(Fixture):
 
     def evaluate(self, experiment: "Experiment") -> np.ndarray:
         factors = self.scaling_factors(experiment)
-        tree = self.kdtree(experiment, factors)
-        logger.info("Built cKDTree with %d nodes from %d points", tree.size, tree.n)
+        trees = [
+            self.kdtree(experiment, factors, isotope=i)
+            for i in range(experiment.config.isotope_error + 1)
+        ]
+        logger.info(
+            "Built %d cKDTree(s) with %s nodes from %d points",
+            len(trees),
+            ", ".join(str(tree.size) for tree in trees),
+            trees[0].n,
+        )
         nb = self.nbatches(experiment)
-        logger.info("Processing %d spectra in %d batches...", tree.n, nb)
+        logger.info("Processing %d spectra in %d batches...", trees[0].n, nb)
         dtype = np.dtype([("i", np.int32), ("j", np.int32), ("score", np.float32)])
         # add global offset to account for the entire peptide dataframe being a subset
         global_offset = experiment.peptides.index[0]
@@ -248,7 +341,7 @@ class SpectrumGrouping(Fixture):
                         3 if experiment.config.model_ccs is not None else 2,
                     ),
                     seq_dtype=experiment.peptides["peptide_sequences"].dtype,
-                    tree=tree,
+                    trees=trees,
                     spectra=experiment.predicted_spectra,
                     scaling_factors=factors,
                     previous_end=previous_end,
@@ -289,9 +382,9 @@ class SpectrumGrouping(Fixture):
             pseudoworker = GroupingWorker(
                 None,
                 None,
-                nbatches=self.nbatches(experiment),
+                nbatches=nb,
                 config=experiment.config,
-                tree=tree,
+                trees=trees,
                 spectra=experiment.predicted_spectra,
                 scaling_factors=factors,
                 previous_end=previous_end,
