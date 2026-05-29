@@ -13,6 +13,7 @@ from similarity.utils.config import (
     KoinaIntensityModel,
     KoinaRTModel,
     KoinaCCSModel,
+    MzErrorUnit,
     PROTON_MASS,
 )
 from similarity.utils.cache import CacheType
@@ -62,12 +63,14 @@ class TestBase(unittest.TestCase):
     test_file = "tests/test_peptides.txt"
     batch_size = 2
     mz_tolerance = 1.0
+    mz_unit = MzErrorUnit.Th
 
     def setUp(self):
         self.config = Config(
             input_file=Path(self.test_file),
             batch_size=self.batch_size,
             precursor_mz_tolerance=self.mz_tolerance,
+            precursor_mz_unit=self.mz_unit,
         )
         logging.basicConfig(
             level=logging.DEBUG,
@@ -536,12 +539,10 @@ class EquivalenceTest(TestBase):
                     )
                     self.logger.debug("m/z values for peptide 1: %s", mz1)
                     self.logger.debug("m/z values for peptide 2: %s", mz2)
-                    idx1, idx2 = GroupingWorker.match_peaks(
-                        mz1,
-                        mz2,
-                        atol=self.config.fragment_mz_tolerance,
-                        rtol=self.config.fragment_mz_ppm / 1e6,
+                    g = GroupingWorker(
+                        None, None, config=exp.config, spectra=exp.predicted_spectra
                     )
+                    idx1, idx2 = g.match_peaks(mz1, mz2)
                     self.logger.debug("Matched indices: %s and %s", idx1, idx2)
                     self.logger.debug(
                         "Matched m/z values:\n%s and\n%s",
@@ -550,8 +551,8 @@ class EquivalenceTest(TestBase):
                     )
 
                     matcher = joinPeaks(
-                        tolerance=self.config.fragment_mz_tolerance,
-                        ppm=self.config.fragment_mz_ppm / 1e6,
+                        tolerance=0,
+                        ppm=self.config.fragment_mz_tolerance,
                     )
                     x_df = (
                         pd.DataFrame({"mz": mz1, "intensities": intensities1})
@@ -614,8 +615,8 @@ class EquivalenceTest(TestBase):
             for i, j, score in exp.score_array:
                 with self.subTest(pair=(i, j)):
                     matcher = joinPeaks(
-                        tolerance=self.config.fragment_mz_tolerance,
-                        ppm=self.config.fragment_mz_ppm / 1e6,
+                        tolerance=0,
+                        ppm=self.config.fragment_mz_tolerance,
                     )
                     x_df = (
                         pd.DataFrame(
@@ -640,13 +641,11 @@ class EquivalenceTest(TestBase):
                     x_matched, y_matched = matcher.match(x_df, y_df)
                     oldscore = nspectraangle(x_matched, y_matched, m=0, n=1)
 
-                    idx1, idx2 = GroupingWorker.match_peaks(
-                        x_df["mz"].values,
-                        y_df["mz"].values,
-                        atol=self.config.fragment_mz_tolerance,
-                        rtol=self.config.fragment_mz_ppm / 1e6,
+                    g = GroupingWorker(
+                        None, None, config=exp.config, spectra=exp.predicted_spectra
                     )
-                    newscore = GroupingWorker.similarity_score(
+                    idx1, idx2 = g.match_peaks(x_df["mz"].values, y_df["mz"].values)
+                    newscore = g.similarity_score(
                         x_df["intensities"].values,
                         y_df["intensities"].values,
                         idx1,
