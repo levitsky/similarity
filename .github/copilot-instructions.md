@@ -20,6 +20,8 @@
   unless explicitly requested to change.
 - `Config` parameters `precursor_mz_tolerance` and `fragment_mz_tolerance` have different meaning depending on
   the unit (ppm or absolute), so all tolerance checks must be aware of this and apply the correct logic based on the configured unit (e.g. use `Config.within_mz_tolerance` where possible).
+- Additionally, m/z tolerance checks (incluiding subset overlap logic) must account for the configured
+  `isotope_error`.
 - When comparing values using configured relative tolerances (in ppm, for example m/z or ccs),
   convert to absolute tolerance using the bigger (by absolute value) of the two values being compared to
   ensure consistency, including subset boundary handling.

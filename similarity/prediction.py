@@ -303,7 +303,11 @@ class MzIrtDataFrame(Fixture):
                 end_of_previous = ends[k - 1]
                 start = end_of_previous
 
-                while c.within_mz_tolerance(values[end_of_previous], values[start - 1]):
+                while (
+                    values[end_of_previous] - values[start - 1]
+                    <= c.absolute_mz_error(values[end_of_previous])
+                    + c.isotope_error * PROTON_MASS / c.min_charge
+                ):
                     start -= 1
                     if (
                         start <= previous_start

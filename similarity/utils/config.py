@@ -193,7 +193,7 @@ class Config(BaseConfig):
     model_ccs: KoinaCCSModel | None = None
     precursor_mz_tolerance: float = 10.0
     precursor_mz_unit: MzErrorUnit = MzErrorUnit.PPM
-    isotope_error: int = 0
+    isotope_error: int = 1
     irt_tolerance: float = 5.0
     fragment_mz_tolerance: float = 10.0
     fragment_mz_unit: MzErrorUnit = MzErrorUnit.PPM
