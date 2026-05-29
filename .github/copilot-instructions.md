@@ -18,6 +18,8 @@
 - The peptide table (`MzIrtDataFrame` fixture) and the underlying `mzrt` shared array must be sorted by `m/z`
   ascending. This sorting is critical for offset calculation and grouping logic, and it must be preserved
   unless explicitly requested to change.
+- `Config` parameters `precursor_mz_tolerance` and `fragment_mz_tolerance` have different meaning depending on
+  the unit (ppm or absolute), so all tolerance checks must be aware of this and apply the correct logic based on the configured unit (e.g. use `Config.within_mz_tolerance` where possible).
 - When comparing values using configured relative tolerances (in ppm, for example m/z or ccs),
   convert to absolute tolerance using the bigger (by absolute value) of the two values being compared to
   ensure consistency, including subset boundary handling.

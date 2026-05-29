@@ -267,6 +267,9 @@ class ExperimentTest(TestBase):
     def test_mz_array_multiple_charges_two_and_three(self):
         config = dataclasses.replace(self.config, min_charge=2, max_charge=3)
         input_peptides = np.unique(np.loadtxt(Path(self.test_file), dtype=bytes))
+        input_peptides = input_peptides[
+            [len(s) < self.config.max_length for s in input_peptides]
+        ]
         with Experiment(config) as exp:
             peptides = exp.peptides[["peptide_sequences", "precursor_charges", "m/z"]]
 
@@ -466,22 +469,19 @@ class IsotopeErrorTest(TestBase):
         self.extra_pairs = self.pairs_iso2 - self.pairs_iso0
 
     @staticmethod
-    def _best_isotope_match(i, j, mz, charges, mz_tolerance, max_isotope):
+    def _best_isotope_match(i, j, mz, charges, config, max_isotope):
         best = None
         for isotope1 in range(max_isotope + 1):
             for isotope2 in range(max_isotope + 1):
-                delta = abs(
-                    mz[i]
-                    + isotope1 * PROTON_MASS / charges[i]
-                    - mz[j]
-                    - isotope2 * PROTON_MASS / charges[j]
-                )
+                shifted_i = mz[i] + isotope1 * PROTON_MASS / charges[i]
+                shifted_j = mz[j] + isotope2 * PROTON_MASS / charges[j]
+                delta = abs(shifted_i - shifted_j)
                 if best is None or delta < best[0]:
-                    best = (delta, isotope1, isotope2)
+                    best = (delta, isotope1, isotope2, shifted_i, shifted_j)
         if best is None:
             return None
-        if best[0] <= mz_tolerance:
-            return best
+        if config.within_mz_tolerance(best[3], best[4]):
+            return best[:3]
         return None
 
     def test_isotope_error_two_superset_of_zero(self):
@@ -497,14 +497,11 @@ class IsotopeErrorTest(TestBase):
             "Expected additional pairs when isotope_error is increased from 0 to 2",
         )
 
-        mz_tolerance = self.config.precursor_mz_tolerance
         isotope_shifted_pairs = Counter()
 
         for i, j in self.extra_pairs:
-            no_isotope_delta = abs(self.peptide_mz[i] - self.peptide_mz[j])
-            self.assertGreater(
-                no_isotope_delta,
-                mz_tolerance,
+            self.assertFalse(
+                self.config.within_mz_tolerance(self.peptide_mz[i], self.peptide_mz[j]),
                 "Additional pairs should be outside no-isotope m/z tolerance",
             )
 
@@ -513,7 +510,7 @@ class IsotopeErrorTest(TestBase):
                 j,
                 self.peptide_mz,
                 self.peptide_charges,
-                mz_tolerance,
+                self.config,
                 max_isotope=2,
             )
             self.assertIsNotNone(
