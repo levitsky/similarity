@@ -44,14 +44,11 @@ class GroupingWorker(ExperimentWorker):
 
     def within_mz_tolerance_equal_charge(self, i: int, j: int) -> bool:
         arr = self.mzrt
-        mz_tol = self.config.precursor_mz_tolerance
         charge = self.charges[i]
         if i > j:
             i, j = j, i
         # now i < j, so mz_i <= mz_j
-        delta_mz = arr[j, 0] - arr[i, 0]  # > 0
-
-        if delta_mz <= mz_tol:
+        if self.config.within_mz_tolerance(arr[i, 0], arr[j, 0]):
             return True
 
         # For equal charge, only isotope-difference matters: (iso1 - iso2).
@@ -176,7 +173,11 @@ class GroupingWorker(ExperimentWorker):
         # format PID as str because it can be None if called from a non-multiprocessing context
         logger.debug("Batch idx %d, offset %d, PID %s", batch, offset, self.pid)
 
-        radius = self.config.precursor_mz_tolerance * np.sqrt(self.mzrt.shape[1])
+        bsize = self.config.batch_size
+        last_idx = min((batch + 1) * bsize, self.mzrt.shape[0]) - 1
+        max_batch_mz = self.mzrt[last_idx, 0]
+        batch_mz_tol = self.config.absolute_mz_error(max_batch_mz)
+        radius = batch_mz_tol * np.sqrt(self.mzrt.shape[1])
         neighbors = []
         subtrees = []
         for isotope2 in range(self.config.isotope_error + 1):
@@ -283,7 +284,8 @@ class SpectrumGrouping(Fixture):
     def scaling_factors(self, experiment: "Experiment") -> np.ndarray:
         """Calculate scaling factors for each dimension based on the configured tolerances.
         With these factors, all tolerances will be scaled to the m/z tolerance."""
-        mz_tol = experiment.config.precursor_mz_tolerance
+        max_mz = float(experiment.peptides["m/z"].max())
+        mz_tol = experiment.config.absolute_mz_error(max_mz)
         irt_tol = experiment.config.irt_tolerance
         if experiment.config.model_ccs is not None:
             ccs_rtol = experiment.config.ccs_rtolerance

@@ -535,9 +535,6 @@ class MzIrtDataFrame(Fixture):
                 mz_array[idx_start],
                 mz_array[idx_end - 1],
             )
-            experiment.offsets = [
-                (start * ncharges, end * ncharges) for start, end in offsets
-            ]
             logger.debug(
                 "Calculated precursor offsets for all subsets: %s ... %s",
                 experiment.offsets[:3],
@@ -582,8 +579,8 @@ class MzIrtDataFrame(Fixture):
             )
         else:
             # sequences may repeat but we might have a subset of all precursors
-            seq_unique = np.unique(seq)
-            irt_array = np.empty_like(seq_unique, dtype=np.float32)
+            seq_unique, inverse = np.unique(seq, return_inverse=True)
+            irt_array = np.empty(seq_unique.shape[0], dtype=np.float32)
             self.get_predictions(
                 "irt",
                 index,
@@ -591,9 +588,7 @@ class MzIrtDataFrame(Fixture):
                 irt_array,
                 experiment,
             )
-            rt_dict = dict(zip(seq_unique, irt_array))
-            for i in range(len(seq)):
-                mzrt[i, 1] = rt_dict[seq[i]]
+            mzrt[:, 1] = irt_array[inverse]
 
         logger.debug("Predicted iRT values: %s ... %s", mzrt[:5, 1], mzrt[-5:, 1])
 

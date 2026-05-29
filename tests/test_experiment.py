@@ -264,6 +264,32 @@ class ExperimentTest(TestBase):
             self.assertEqual(exp.peptides.shape[0], 56)
             self.assertEqual(exp.score_df.shape[0], 18)
 
+    def test_mz_array_multiple_charges_two_and_three(self):
+        config = dataclasses.replace(self.config, min_charge=2, max_charge=3)
+        input_peptides = np.unique(np.loadtxt(Path(self.test_file), dtype=bytes))
+        with Experiment(config) as exp:
+            peptides = exp.peptides[["peptide_sequences", "precursor_charges", "m/z"]]
+
+            self.assertEqual(peptides.shape[0], 2 * input_peptides.shape[0])
+            self.assertEqual(set(peptides["precursor_charges"].tolist()), {2, 3})
+
+            mz_by_charge = peptides.pivot_table(
+                index="peptide_sequences",
+                columns="precursor_charges",
+                values="m/z",
+                aggfunc="first",
+            )
+            self.assertFalse(mz_by_charge[[2, 3]].isna().any().any())
+
+            # m/z values for z=2 and z=3 must map back to the same neutral mass.
+            mass_from_z2 = (
+                mz_by_charge[2].to_numpy(dtype=np.float64) * 2 - 2 * PROTON_MASS
+            )
+            mass_from_z3 = (
+                mz_by_charge[3].to_numpy(dtype=np.float64) * 3 - 3 * PROTON_MASS
+            )
+            np.testing.assert_allclose(mass_from_z2, mass_from_z3, rtol=1e-6, atol=1e-6)
+
     def test_isotope_scoring_outputs_unique_pairs(self):
         config = dataclasses.replace(
             self.config,
@@ -517,6 +543,66 @@ class IsotopeErrorTest(TestBase):
                 0,
                 f"Expected some pairs with isotope difference of {isotope_diff} to be added",
             )
+
+
+class ConfigToleranceTest(unittest.TestCase):
+    def test_within_mz_tolerance_ppm_uses_larger_value_and_is_symmetric(self):
+        config = Config(
+            precursor_mz_tolerance=10.0,
+            precursor_mz_unit=MzErrorUnit.PPM,
+        )
+        self.assertTrue(config.within_mz_tolerance(999.99, 1000.0))
+        self.assertTrue(config.within_mz_tolerance(1000.0, 999.99))
+        self.assertFalse(config.within_mz_tolerance(499.9949, 500.0))
+
+
+class GroupingWorkerLogicTest(unittest.TestCase):
+    def _worker(self, **config_overrides):
+        config = Config(**config_overrides)
+        worker = GroupingWorker(None, None, config=config)
+        worker.mzrt = np.array(
+            [
+                [1000.0, 0.0],
+                [1200.0, 0.0],
+                [800.0, 0.0],
+            ],
+            dtype=np.float32,
+        )
+        worker.charges = np.array([2, 3, 2], dtype=np.uint8)
+        return worker
+
+    def test_isotopes_overlap_false_for_small_relative_tolerance(self):
+        worker = self._worker(
+            isotope_error=1,
+            precursor_mz_unit=MzErrorUnit.PPM,
+            precursor_mz_tolerance=200.0,
+            min_charge=2,
+            max_charge=3,
+            batch_size=2,
+        )
+        self.assertFalse(worker.isotopes_overlap(0))
+
+    def test_isotopes_overlap_true_for_large_relative_tolerance(self):
+        worker = self._worker(
+            isotope_error=1,
+            precursor_mz_unit=MzErrorUnit.PPM,
+            precursor_mz_tolerance=300.0,
+            min_charge=2,
+            max_charge=3,
+            batch_size=2,
+        )
+        self.assertTrue(worker.isotopes_overlap(0))
+
+    def test_isotopes_overlap_false_when_isotope_error_disabled(self):
+        worker = self._worker(
+            isotope_error=0,
+            precursor_mz_unit=MzErrorUnit.PPM,
+            precursor_mz_tolerance=1000.0,
+            min_charge=2,
+            max_charge=3,
+            batch_size=2,
+        )
+        self.assertFalse(worker.isotopes_overlap(0))
 
 
 class EquivalenceTest(TestBase):
