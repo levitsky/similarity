@@ -174,8 +174,9 @@ class KoinaCCSModel(LiteralEnum):
 
 class MzErrorUnit(LiteralEnum):
     Th = auto()
-    PPM = auto()
+    ppm = auto()
     Da = "Th"  # alias for Th
+    PPM = "ppm"  # alias for ppm
 
 
 @dataclass(frozen=True, slots=True)
