@@ -29,7 +29,7 @@ dependencies = [
     "lxml",
     "scipy",
     "pandas",
-    # spectram_similarity is not installable via pip yet
+    # spectral_similarity is not installable via pip yet
     # "spectral_similarity @ git+https://github.com/jlapin1/spectral_similarity"
 ]
 
