@@ -295,6 +295,33 @@ class ExperimentTest(TestBase):
             )
             np.testing.assert_allclose(mass_from_z2, mass_from_z3, rtol=1e-6, atol=1e-6)
 
+    def test_mz_array_single_charge_two_with_variable_mods(self):
+        config = dataclasses.replace(
+            self.config,
+            min_charge=2,
+            max_charge=2,
+            variable_mods=["UNIMOD:35|Position:M"],
+        )
+        with Experiment(config) as exp:
+            fixture = MzIrtDataFrame()
+            sequences = fixture.generate_sequences(exp)
+            mz_values = fixture.mz_array(exp, sequences)
+
+            self.assertEqual(mz_values.shape[0], sequences.shape[0])
+
+            mass_calc = fixture.mass_calculator(exp)
+            expected_mass = np.array(
+                [mass_calc(seq) for seq in sequences],
+                dtype=np.float64,
+            )
+            mass_from_z2 = mz_values.astype(np.float64) * 2 - 2 * PROTON_MASS
+            np.testing.assert_allclose(
+                mass_from_z2,
+                expected_mass,
+                rtol=1e-6,
+                atol=1e-6,
+            )
+
     def test_isotope_scoring_outputs_unique_pairs(self):
         config = dataclasses.replace(
             self.config,

@@ -179,11 +179,16 @@ class MzErrorUnit(LiteralEnum):
     PPM = "ppm"  # alias for ppm
 
 
+class FragmentationType(LiteralEnum):
+    HCD = auto()
+    CID = auto()
+
+
 @dataclass(frozen=True, slots=True)
 class Config(BaseConfig):
     input_file: Path | None = None
     collision_energy: int = 30
-    fragmentation_type: str | None = None
+    fragmentation_type: FragmentationType = FragmentationType.HCD
     min_charge: int = 2
     max_charge: int = 2
     min_length: int = 5
