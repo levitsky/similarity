@@ -71,6 +71,8 @@ class TestBase(unittest.TestCase):
             batch_size=self.batch_size,
             precursor_mz_tolerance=self.mz_tolerance,
             precursor_mz_unit=self.mz_unit,
+            model_intensity=KoinaIntensityModel.Prosit_2020_intensity_HCD,
+            model_irt=KoinaRTModel.Prosit_2019_irt,
         )
         logging.basicConfig(
             level=logging.DEBUG,
