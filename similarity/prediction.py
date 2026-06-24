@@ -641,5 +641,5 @@ class MzIrtDataFrame(Fixture):
         # the rest of the columns are not in shared memory
         df["collision_energies"] = experiment.config.collision_energy
         if experiment.config.fragmentation_type is not None:
-            df["fragmentation_types"] = experiment.config.fragmentation_type
+            df["fragmentation_types"] = experiment.config.fragmentation_type.value
         return df
