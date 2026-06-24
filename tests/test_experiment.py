@@ -13,6 +13,7 @@ from similarity.utils.config import (
     KoinaIntensityModel,
     KoinaRTModel,
     KoinaCCSModel,
+    FragmentationType,
     MzErrorUnit,
     PROTON_MASS,
 )
@@ -381,7 +382,7 @@ class ExperimentTest(TestBase):
             input_file=Path("tests/test_peptides_ptms.txt"),
             model_irt=KoinaRTModel.Prosit_2025_irt_40PTM,
             model_intensity=KoinaIntensityModel.Prosit_2025_intensity_40PTM,
-            fragmentation_type="HCD",
+            fragmentation_type=FragmentationType.HCD,
         )
         with Experiment(config) as exp:
             self.assertTrue(
