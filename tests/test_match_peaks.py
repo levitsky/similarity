@@ -7,6 +7,7 @@ import pandas as pd
 from similarity.grouping import GroupingWorker
 from similarity.prediction import PredictedSpectrumCollection
 from similarity.utils.abc import IndexType
+from similarity.utils.config import Config, MzErrorUnit
 from similarity.utils.spectrum_collection.cached import CachedSpectrumCollection
 from similarity.utils.spectrum_collection.sharedarray import (
     SharedArraySpectrumCollection,
@@ -65,20 +66,20 @@ class MatchPeaksTest(unittest.TestCase):
             (
                 np.array([100.0, 100.01, 100.03, 101.0], dtype=np.float32),
                 np.array([99.995, 100.01, 100.02, 101.0], dtype=np.float32),
+                MzErrorUnit.Th,
                 0.02,
-                15e-6,
             ),
             (
                 np.array([150.0, 150.0, 150.02, 150.04], dtype=np.float64),
                 np.array([149.99, 150.0, 150.0, 150.05], dtype=np.float64),
+                MzErrorUnit.Th,
                 0.02,
-                0.0,
             ),
             (
                 np.array([], dtype=np.float32),
                 np.array([500.0, 500.01], dtype=np.float32),
-                0.02,
-                10e-6,
+                MzErrorUnit.PPM,
+                10.0,
             ),
         ]
 
@@ -86,12 +87,19 @@ class MatchPeaksTest(unittest.TestCase):
         for _ in range(25):
             mz1 = np.sort(rng.uniform(100.0, 1500.0, size=32).astype(np.float32))
             mz2 = np.sort(rng.uniform(100.0, 1500.0, size=40).astype(np.float32))
-            cases.append((mz1, mz2, 0.015, 20e-6))
+            cases.append((mz1, mz2, MzErrorUnit.Th, 0.015))
+            cases.append((mz1, mz2, MzErrorUnit.PPM, 20.0))
 
-        for mz1, mz2, atol, rtol in cases:
-            with self.subTest(size=(mz1.size, mz2.size), atol=atol, rtol=rtol):
+        for mz1, mz2, unit, tolerance in cases:
+            with self.subTest(
+                size=(mz1.size, mz2.size), unit=unit, tolerance=tolerance
+            ):
+                config = Config(fragment_mz_unit=unit, fragment_mz_tolerance=tolerance)
+                g = GroupingWorker(None, None, config=config)
+                atol = tolerance if unit == MzErrorUnit.Th else 0.0
+                rtol = tolerance / 1e6 if unit == MzErrorUnit.PPM else 0.0
                 expected = dense_match_peaks(mz1, mz2, atol, rtol)
-                actual = GroupingWorker.match_peaks(mz1, mz2, atol, rtol)
+                actual = g.match_peaks(mz1, mz2)
                 np.testing.assert_array_equal(actual[0], expected[0])
                 np.testing.assert_array_equal(actual[1], expected[1])
 
@@ -102,12 +110,17 @@ class MatchPeaksTest(unittest.TestCase):
             mz2 = np.sort(rng.uniform(100.0, 1500.0, size=80).astype(np.float32))
             intensities1 = np.sqrt(rng.uniform(1e-5, 1.0, size=64)).astype(np.float32)
             intensities2 = np.sqrt(rng.uniform(1e-5, 1.0, size=80)).astype(np.float32)
-            idx1, idx2 = GroupingWorker.match_peaks(mz1, mz2, 0.02, 20e-6)
+            g = GroupingWorker(
+                None,
+                None,
+                config=Config(
+                    fragment_mz_unit=MzErrorUnit.Th, fragment_mz_tolerance=0.02
+                ),
+            )
+            idx1, idx2 = g.match_peaks(mz1, mz2)
 
             expected = python_similarity_score(intensities1, intensities2, idx1, idx2)
-            actual = GroupingWorker.similarity_score(
-                intensities1, intensities2, idx1, idx2
-            )
+            actual = g.similarity_score(intensities1, intensities2, idx1, idx2)
             self.assertAlmostEqual(actual, expected, places=6)
 
     def test_similarity_score_matches_python_reference_with_duplicate_matches(self):

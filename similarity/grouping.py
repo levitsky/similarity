@@ -7,7 +7,7 @@ import multiprocessing as mp
 import itertools
 from .utils.abc import Fixture
 from .utils.utils import ExperimentWorker
-from .utils.config import PROTON_MASS
+from .utils.config import PROTON_MASS, MzErrorUnit
 from .prediction import MzIrtDataFrame
 from ._match_peaks import match_peaks_sorted, similarity_score as c_similarity_score
 
@@ -40,19 +40,15 @@ class GroupingWorker(ExperimentWorker):
 
     def within_mz_tolerance_no_isotope(self, i: int, j: int) -> bool:
         arr = self.mzrt
-        mz_tol = self.config.mz_tolerance
-        return abs(arr[i, 0] - arr[j, 0]) <= mz_tol
+        return self.config.within_mz_tolerance(arr[i, 0], arr[j, 0])
 
     def within_mz_tolerance_equal_charge(self, i: int, j: int) -> bool:
         arr = self.mzrt
-        mz_tol = self.config.mz_tolerance
         charge = self.charges[i]
-        # make sure delta_mz is positive
-        if i < j:
+        if i > j:
             i, j = j, i
-        delta_mz = arr[i, 0] - arr[j, 0]
-
-        if delta_mz <= mz_tol:
+        # now i < j, so mz_i <= mz_j
+        if self.config.within_mz_tolerance(arr[i, 0], arr[j, 0]):
             return True
 
         # For equal charge, only isotope-difference matters: (iso1 - iso2).
@@ -60,21 +56,19 @@ class GroupingWorker(ExperimentWorker):
         # covering both orderings (iso1 > iso2 and iso1 < iso2).
         shift = PROTON_MASS / charge
         return any(
-            abs(delta_mz - delta_isotope * shift) <= mz_tol
+            self.config.within_mz_tolerance(
+                arr[i, 0] + delta_isotope * shift, arr[j, 0]
+            )
             for delta_isotope in range(1, self.config.isotope_error + 1)
         )
 
     def within_mz_tolerance_different_charge(self, i: int, j: int) -> bool:
         arr = self.mzrt
-        mz_tol = self.config.mz_tolerance
         return any(
-            abs(
-                arr[i, 0]
-                + isotope1 * PROTON_MASS / self.charges[i]
-                - arr[j, 0]
-                - isotope2 * PROTON_MASS / self.charges[j]
+            self.config.within_mz_tolerance(
+                arr[i, 0] + isotope1 * PROTON_MASS / self.charges[i],
+                arr[j, 0] + isotope2 * PROTON_MASS / self.charges[j],
             )
-            <= mz_tol
             for isotope1, isotope2 in itertools.product(
                 range(self.config.isotope_error + 1), repeat=2
             )
@@ -123,9 +117,8 @@ class GroupingWorker(ExperimentWorker):
             )
         return cKDTree(arr * self.scaling_factors)
 
-    @staticmethod
-    def match_peaks(mz1: np.ndarray, mz2: np.ndarray, atol: float, rtol: float):
-        return match_peaks_sorted(mz1, mz2, atol, rtol)
+    def match_peaks(self, mz1: np.ndarray, mz2: np.ndarray):
+        return match_peaks_sorted(mz1, mz2, self.atol, self.rtol)
 
     @staticmethod
     def similarity_score(
@@ -139,12 +132,7 @@ class GroupingWorker(ExperimentWorker):
     def score_pair(self, i: int, j: int) -> float:
         mz1, intensities1 = self.spectra[i]
         mz2, intensities2 = self.spectra[j]
-        idx1, idx2 = self.match_peaks(
-            mz1,
-            mz2,
-            atol=self.config.peak_tolerance,
-            rtol=self.config.peak_ppm / 1e6,
-        )
+        idx1, idx2 = self.match_peaks(mz1, mz2)
         return self.similarity_score(intensities1, intensities2, idx1, idx2)
 
     @staticmethod
@@ -162,6 +150,18 @@ class GroupingWorker(ExperimentWorker):
         scores = np.frombuffer(scores_bytes, dtype=np.float32)
         return i, matches, scores
 
+    def isotopes_overlap(self, batch: int) -> bool:
+        if self.config.isotope_error == 0:
+            return False
+        bsize = self.config.batch_size
+        last_idx = min((batch + 1) * bsize, self.mzrt.shape[0]) - 1
+        biggest_mz = self.mzrt[last_idx, 0]
+        if self.config.min_charge == self.config.max_charge:
+            biggest_charge = self.config.min_charge
+        else:
+            biggest_charge = self.charges[batch * bsize : (batch + 1) * bsize].max()
+        return self.config.absolute_mz_error(biggest_mz) >= PROTON_MASS / biggest_charge
+
     def process_batch(
         self,
         batch: int,
@@ -173,7 +173,11 @@ class GroupingWorker(ExperimentWorker):
         # format PID as str because it can be None if called from a non-multiprocessing context
         logger.debug("Batch idx %d, offset %d, PID %s", batch, offset, self.pid)
 
-        radius = self.config.mz_tolerance * np.sqrt(self.mzrt.shape[1])
+        bsize = self.config.batch_size
+        last_idx = min((batch + 1) * bsize, self.mzrt.shape[0]) - 1
+        max_batch_mz = self.mzrt[last_idx, 0]
+        batch_mz_tol = self.config.absolute_mz_error(max_batch_mz)
+        radius = batch_mz_tol * np.sqrt(self.mzrt.shape[1])
         neighbors = []
         subtrees = []
         for isotope2 in range(self.config.isotope_error + 1):
@@ -188,7 +192,7 @@ class GroupingWorker(ExperimentWorker):
             matches = []
             scores = []
             j = x + offset
-            if self.overlap:
+            if self.isotopes_overlap(batch):
                 # if isotopes can overlap, we need to deduplicate the indices from different trees
                 indices = set()
                 for ix in zindices:
@@ -208,7 +212,12 @@ class GroupingWorker(ExperimentWorker):
         super().__init__(*args, **kwargs)
         self.within_tolerance = self.tolerance_check()
         self.within_mz_tolerance = self.mz_tolerance_check()
-        self.overlap = self.config.isotopes_overlap
+        if self.config.fragment_mz_unit == MzErrorUnit.PPM:
+            self.rtol = self.config.fragment_mz_tolerance / 1e6
+            self.atol = 0.0
+        else:
+            self.rtol = 0.0
+            self.atol = self.config.fragment_mz_tolerance
 
     def run(self) -> None:
         logger.debug("Worker started with PID %d", self.pid)
@@ -275,7 +284,8 @@ class SpectrumGrouping(Fixture):
     def scaling_factors(self, experiment: "Experiment") -> np.ndarray:
         """Calculate scaling factors for each dimension based on the configured tolerances.
         With these factors, all tolerances will be scaled to the m/z tolerance."""
-        mz_tol = experiment.config.mz_tolerance
+        max_mz = float(experiment.peptides["m/z"].max())
+        mz_tol = experiment.config.absolute_mz_error(max_mz)
         irt_tol = experiment.config.irt_tolerance
         if experiment.config.model_ccs is not None:
             ccs_rtol = experiment.config.ccs_rtolerance

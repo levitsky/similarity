@@ -13,6 +13,8 @@ from similarity.utils.config import (
     KoinaIntensityModel,
     KoinaRTModel,
     KoinaCCSModel,
+    FragmentationType,
+    MzErrorUnit,
     PROTON_MASS,
 )
 from similarity.utils.cache import CacheType
@@ -62,12 +64,16 @@ class TestBase(unittest.TestCase):
     test_file = "tests/test_peptides.txt"
     batch_size = 2
     mz_tolerance = 1.0
+    mz_unit = MzErrorUnit.Th
 
     def setUp(self):
         self.config = Config(
             input_file=Path(self.test_file),
             batch_size=self.batch_size,
-            mz_tolerance=self.mz_tolerance,
+            precursor_mz_tolerance=self.mz_tolerance,
+            precursor_mz_unit=self.mz_unit,
+            model_intensity=KoinaIntensityModel.Prosit_2020_intensity_HCD,
+            model_irt=KoinaRTModel.Prosit_2019_irt,
         )
         logging.basicConfig(
             level=logging.DEBUG,
@@ -261,12 +267,68 @@ class ExperimentTest(TestBase):
             self.assertEqual(exp.peptides.shape[0], 56)
             self.assertEqual(exp.score_df.shape[0], 18)
 
+    def test_mz_array_multiple_charges_two_and_three(self):
+        config = dataclasses.replace(self.config, min_charge=2, max_charge=3)
+        input_peptides = np.unique(np.loadtxt(Path(self.test_file), dtype=bytes))
+        input_peptides = input_peptides[
+            [len(s) < self.config.max_length for s in input_peptides]
+        ]
+        with Experiment(config) as exp:
+            peptides = exp.peptides[["peptide_sequences", "precursor_charges", "m/z"]]
+
+            self.assertEqual(peptides.shape[0], 2 * input_peptides.shape[0])
+            self.assertEqual(set(peptides["precursor_charges"].tolist()), {2, 3})
+
+            mz_by_charge = peptides.pivot_table(
+                index="peptide_sequences",
+                columns="precursor_charges",
+                values="m/z",
+                aggfunc="first",
+            )
+            self.assertFalse(mz_by_charge[[2, 3]].isna().any().any())
+
+            # m/z values for z=2 and z=3 must map back to the same neutral mass.
+            mass_from_z2 = (
+                mz_by_charge[2].to_numpy(dtype=np.float64) * 2 - 2 * PROTON_MASS
+            )
+            mass_from_z3 = (
+                mz_by_charge[3].to_numpy(dtype=np.float64) * 3 - 3 * PROTON_MASS
+            )
+            np.testing.assert_allclose(mass_from_z2, mass_from_z3, rtol=1e-6, atol=1e-6)
+
+    def test_mz_array_single_charge_two_with_variable_mods(self):
+        config = dataclasses.replace(
+            self.config,
+            min_charge=2,
+            max_charge=2,
+            variable_mods=["UNIMOD:35|Position:M"],
+        )
+        with Experiment(config) as exp:
+            fixture = MzIrtDataFrame()
+            sequences = fixture.generate_sequences(exp)
+            mz_values = fixture.mz_array(exp, sequences)
+
+            self.assertEqual(mz_values.shape[0], sequences.shape[0])
+
+            mass_calc = fixture.mass_calculator(exp)
+            expected_mass = np.array(
+                [mass_calc(seq) for seq in sequences],
+                dtype=np.float64,
+            )
+            mass_from_z2 = mz_values.astype(np.float64) * 2 - 2 * PROTON_MASS
+            np.testing.assert_allclose(
+                mass_from_z2,
+                expected_mass,
+                rtol=1e-6,
+                atol=1e-6,
+            )
+
     def test_isotope_scoring_outputs_unique_pairs(self):
         config = dataclasses.replace(
             self.config,
             batch_size=512,
             isotope_error=1,
-            mz_tolerance=0.3,
+            precursor_mz_tolerance=0.1,
             max_charge=2,
             score_threshold=0.0,
             workers=1,
@@ -320,7 +382,7 @@ class ExperimentTest(TestBase):
             input_file=Path("tests/test_peptides_ptms.txt"),
             model_irt=KoinaRTModel.Prosit_2025_irt_40PTM,
             model_intensity=KoinaIntensityModel.Prosit_2025_intensity_40PTM,
-            fragmentation_type="HCD",
+            fragmentation_type=FragmentationType.HCD,
         )
         with Experiment(config) as exp:
             self.assertTrue(
@@ -356,7 +418,6 @@ class SubsetTest(TestBase):
         runner = ExperimentRunner(
             config=config,
             peptide_table="tests/peptides_subset.tsv",
-            jobs=2,
             create_peptide_table=True,
             array_file="tests/scores_subset_{}.npy",
             score_df_file="tests/scores_subset_{}.tsv",
@@ -438,22 +499,19 @@ class IsotopeErrorTest(TestBase):
         self.extra_pairs = self.pairs_iso2 - self.pairs_iso0
 
     @staticmethod
-    def _best_isotope_match(i, j, mz, charges, mz_tolerance, max_isotope):
+    def _best_isotope_match(i, j, mz, charges, config, max_isotope):
         best = None
         for isotope1 in range(max_isotope + 1):
             for isotope2 in range(max_isotope + 1):
-                delta = abs(
-                    mz[i]
-                    + isotope1 * PROTON_MASS / charges[i]
-                    - mz[j]
-                    - isotope2 * PROTON_MASS / charges[j]
-                )
+                shifted_i = mz[i] + isotope1 * PROTON_MASS / charges[i]
+                shifted_j = mz[j] + isotope2 * PROTON_MASS / charges[j]
+                delta = abs(shifted_i - shifted_j)
                 if best is None or delta < best[0]:
-                    best = (delta, isotope1, isotope2)
+                    best = (delta, isotope1, isotope2, shifted_i, shifted_j)
         if best is None:
             return None
-        if best[0] <= mz_tolerance:
-            return best
+        if config.within_mz_tolerance(best[3], best[4]):
+            return best[:3]
         return None
 
     def test_isotope_error_two_superset_of_zero(self):
@@ -469,14 +527,11 @@ class IsotopeErrorTest(TestBase):
             "Expected additional pairs when isotope_error is increased from 0 to 2",
         )
 
-        mz_tolerance = self.config.mz_tolerance
         isotope_shifted_pairs = Counter()
 
         for i, j in self.extra_pairs:
-            no_isotope_delta = abs(self.peptide_mz[i] - self.peptide_mz[j])
-            self.assertGreater(
-                no_isotope_delta,
-                mz_tolerance,
+            self.assertFalse(
+                self.config.within_mz_tolerance(self.peptide_mz[i], self.peptide_mz[j]),
                 "Additional pairs should be outside no-isotope m/z tolerance",
             )
 
@@ -485,7 +540,7 @@ class IsotopeErrorTest(TestBase):
                 j,
                 self.peptide_mz,
                 self.peptide_charges,
-                mz_tolerance,
+                self.config,
                 max_isotope=2,
             )
             self.assertIsNotNone(
@@ -517,6 +572,66 @@ class IsotopeErrorTest(TestBase):
             )
 
 
+class ConfigToleranceTest(unittest.TestCase):
+    def test_within_mz_tolerance_ppm_uses_larger_value_and_is_symmetric(self):
+        config = Config(
+            precursor_mz_tolerance=10.0,
+            precursor_mz_unit=MzErrorUnit.PPM,
+        )
+        self.assertTrue(config.within_mz_tolerance(999.99, 1000.0))
+        self.assertTrue(config.within_mz_tolerance(1000.0, 999.99))
+        self.assertFalse(config.within_mz_tolerance(499.9949, 500.0))
+
+
+class GroupingWorkerLogicTest(unittest.TestCase):
+    def _worker(self, **config_overrides):
+        config = Config(**config_overrides)
+        worker = GroupingWorker(None, None, config=config)
+        worker.mzrt = np.array(
+            [
+                [1000.0, 0.0],
+                [1200.0, 0.0],
+                [800.0, 0.0],
+            ],
+            dtype=np.float32,
+        )
+        worker.charges = np.array([2, 3, 2], dtype=np.uint8)
+        return worker
+
+    def test_isotopes_overlap_false_for_small_relative_tolerance(self):
+        worker = self._worker(
+            isotope_error=1,
+            precursor_mz_unit=MzErrorUnit.PPM,
+            precursor_mz_tolerance=200.0,
+            min_charge=2,
+            max_charge=3,
+            batch_size=2,
+        )
+        self.assertFalse(worker.isotopes_overlap(0))
+
+    def test_isotopes_overlap_true_for_large_relative_tolerance(self):
+        worker = self._worker(
+            isotope_error=1,
+            precursor_mz_unit=MzErrorUnit.PPM,
+            precursor_mz_tolerance=300.0,
+            min_charge=2,
+            max_charge=3,
+            batch_size=2,
+        )
+        self.assertTrue(worker.isotopes_overlap(0))
+
+    def test_isotopes_overlap_false_when_isotope_error_disabled(self):
+        worker = self._worker(
+            isotope_error=0,
+            precursor_mz_unit=MzErrorUnit.PPM,
+            precursor_mz_tolerance=1000.0,
+            min_charge=2,
+            max_charge=3,
+            batch_size=2,
+        )
+        self.assertFalse(worker.isotopes_overlap(0))
+
+
 class EquivalenceTest(TestBase):
     def setUp(self):
         if joinPeaks is None or nspectraangle is None:
@@ -537,12 +652,10 @@ class EquivalenceTest(TestBase):
                     )
                     self.logger.debug("m/z values for peptide 1: %s", mz1)
                     self.logger.debug("m/z values for peptide 2: %s", mz2)
-                    idx1, idx2 = GroupingWorker.match_peaks(
-                        mz1,
-                        mz2,
-                        atol=0.1,
-                        rtol=0.0005,
+                    g = GroupingWorker(
+                        None, None, config=exp.config, spectra=exp.predicted_spectra
                     )
+                    idx1, idx2 = g.match_peaks(mz1, mz2)
                     self.logger.debug("Matched indices: %s and %s", idx1, idx2)
                     self.logger.debug(
                         "Matched m/z values:\n%s and\n%s",
@@ -551,7 +664,8 @@ class EquivalenceTest(TestBase):
                     )
 
                     matcher = joinPeaks(
-                        tolerance=self.config.peak_tolerance, ppm=self.config.peak_ppm
+                        tolerance=0,
+                        ppm=self.config.fragment_mz_tolerance,
                     )
                     x_df = (
                         pd.DataFrame({"mz": mz1, "intensities": intensities1})
@@ -565,6 +679,7 @@ class EquivalenceTest(TestBase):
                     )
                     x_matched, y_matched = matcher.match(x_df, y_df)
                     mask = pd.notna(x_matched["mz"]) & pd.notna(y_matched["mz"])
+                    matched_count = int(mask.sum())
 
                     self.logger.debug(
                         "Matched m/z values using joinPeaks:\n%s and \n%s",
@@ -576,10 +691,7 @@ class EquivalenceTest(TestBase):
                         np.sort(mz1[idx1]),
                         np.sort(mz2[idx2]),
                     )
-                    if (
-                        idx1.size == x_matched.shape[0]
-                        and idx2.size == y_matched.shape[0]
-                    ):
+                    if idx1.size == matched_count and idx2.size == matched_count:
                         self.assertTrue(
                             np.allclose(
                                 x_matched.loc[mask, "mz"].values,
@@ -616,7 +728,8 @@ class EquivalenceTest(TestBase):
             for i, j, score in exp.score_array:
                 with self.subTest(pair=(i, j)):
                     matcher = joinPeaks(
-                        tolerance=self.config.peak_tolerance, ppm=self.config.peak_ppm
+                        tolerance=0,
+                        ppm=self.config.fragment_mz_tolerance,
                     )
                     x_df = (
                         pd.DataFrame(
@@ -641,13 +754,11 @@ class EquivalenceTest(TestBase):
                     x_matched, y_matched = matcher.match(x_df, y_df)
                     oldscore = nspectraangle(x_matched, y_matched, m=0, n=1)
 
-                    idx1, idx2 = GroupingWorker.match_peaks(
-                        x_df["mz"].values,
-                        y_df["mz"].values,
-                        atol=self.config.peak_tolerance,
-                        rtol=self.config.peak_ppm / 1e6,
+                    g = GroupingWorker(
+                        None, None, config=exp.config, spectra=exp.predicted_spectra
                     )
-                    newscore = GroupingWorker.similarity_score(
+                    idx1, idx2 = g.match_peaks(x_df["mz"].values, y_df["mz"].values)
+                    newscore = g.similarity_score(
                         x_df["intensities"].values,
                         y_df["intensities"].values,
                         idx1,

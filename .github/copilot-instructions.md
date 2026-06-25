@@ -15,6 +15,18 @@
 ## Non-negotiable correctness invariants
 - Subset processing must be equivalent to a full single-run result after concatenating all subsets.
 - `subset_offsets` must produce exactly `config.subsets` ranges and must not drop tail rows.
+- The peptide table (`MzIrtDataFrame` fixture) and the underlying `mzrt` shared array must be sorted by `m/z`
+  ascending. This sorting is critical for offset calculation and grouping logic, and it must be preserved
+  unless explicitly requested to change.
+- `Config` parameters `precursor_mz_tolerance` and `fragment_mz_tolerance` have different meaning depending on
+  the unit (ppm or absolute), so all tolerance checks must be aware of this and apply the correct logic based on the configured unit (e.g. use `Config.within_mz_tolerance` where possible).
+- Additionally, m/z tolerance checks (incluiding subset overlap logic) must account for the configured
+  `isotope_error`.
+- When comparing values using configured relative tolerances (in ppm, for example m/z or ccs),
+  convert to absolute tolerance using the bigger (by absolute value) of the two values being compared to
+  ensure consistency, including subset boundary handling.
+- If a task explicitly requests changing a correctness invariant, state all downstream components affected
+  before making any edits and ask for confirmation if the impact spans more than one module.
 - Overlap handling between subsets must avoid both missed boundary pairs and duplicate pairs.
 - In grouping, boundary inclusion must keep the first non-overlap index in scope.
 - `score_array` records are structured as `(i, j, score)` with consistent global peptide indices.
@@ -45,11 +57,12 @@
   - `tests/test_match_peaks.py`
 - For subset/grouping/prediction changes, run at least:
   - `tests/test_experiment.py` (especially `SubsetTest` cases)
+- If a change touches multiple categories, run all listed test files for each applicable category.
 - If behavior changes intentionally, update or add targeted regression tests rather than broad rewrites.
-- For test runs, use the configured Python interpreter. Check that the system Python is not used.
+- For test runs, use `unittest` with the configured Python interpreter. Check that the system Python is not used.
 
 ## Change style
 - Make minimal, localized edits.
 - Preserve public APIs and file formats unless the task requires a breaking change.
 - Avoid introducing new dependencies unless clearly justified.
-- Add short comments only for non-obvious logic, especially around subset overlap boundaries.
+- Add brief comments (two lines max) only for non-obvious logic, especially around subset overlap boundaries.

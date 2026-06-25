@@ -172,23 +172,38 @@ class KoinaCCSModel(LiteralEnum):
     IM2Deep = auto()
 
 
+class MzErrorUnit(LiteralEnum):
+    Th = auto()
+    ppm = auto()
+    Da = "Th"  # alias for Th
+    PPM = "ppm"  # alias for ppm
+
+
+class FragmentationType(LiteralEnum):
+    HCD = auto()
+    CID = auto()
+
+
 @dataclass(frozen=True, slots=True)
 class Config(BaseConfig):
     input_file: Path | None = None
     collision_energy: int = 30
-    fragmentation_type: str | None = None
+    fragmentation_type: FragmentationType = FragmentationType.HCD
     min_charge: int = 2
     max_charge: int = 2
     min_length: int = 5
     max_length: int = 30
-    model_intensity: KoinaIntensityModel = KoinaIntensityModel.Prosit_2020_intensity_HCD
-    model_irt: KoinaRTModel = KoinaRTModel.Prosit_2019_irt
+    model_intensity: KoinaIntensityModel = (
+        KoinaIntensityModel.Prosit_2025_intensity_40PTM
+    )
+    model_irt: KoinaRTModel = KoinaRTModel.Prosit_2025_irt_40PTM
     model_ccs: KoinaCCSModel | None = None
-    mz_tolerance: float = 1.0
-    isotope_error: int = 0
+    precursor_mz_tolerance: float = 10.0
+    precursor_mz_unit: MzErrorUnit = MzErrorUnit.PPM
+    isotope_error: int = 1
     irt_tolerance: float = 5.0
-    peak_tolerance: float = 0.0
-    peak_ppm: float = 10.0
+    fragment_mz_tolerance: float = 10.0
+    fragment_mz_unit: MzErrorUnit = MzErrorUnit.PPM
     ccs_rtolerance: float = 0.02
     nonstandard_aminoacids: bool = False
     ptms: bool = False
@@ -205,6 +220,19 @@ class Config(BaseConfig):
     subsets: int = 1
     subset: int = 0
 
+    def absolute_mz_error(self, mz: float) -> float:
+        if self.precursor_mz_unit == MzErrorUnit.PPM:
+            return mz * self.precursor_mz_tolerance / 1e6
+        elif self.precursor_mz_unit == MzErrorUnit.Th:
+            return self.precursor_mz_tolerance
+        else:
+            raise ValueError(f"Unsupported m/z error unit: {self.precursor_mz_unit}")
+
+    def within_mz_tolerance(self, mz1: float, mz2: float) -> bool:
+        if mz1 > mz2:
+            mz1, mz2 = mz2, mz1
+        return mz2 - mz1 <= self.absolute_mz_error(mz2)
+
     def __post_init__(self):
         if self.cache != CacheType.NONE and self.cache_conf is None:
             logger.warning(
@@ -213,19 +241,3 @@ class Config(BaseConfig):
             object.__setattr__(
                 self, "cache_conf", CacheConfigType[self.cache.name].value()
             )
-        if self.isotopes_overlap:
-            logger.warning(
-                "m/z tolerance (%.2f) is large enough for isotope windows to overlap (spacing %.2f).",
-                self.mz_tolerance,
-                PROTON_MASS / self.max_charge,
-            )
-
-    @property
-    def max_mz_difference(self) -> float:
-        return self.mz_tolerance + PROTON_MASS * self.isotope_error / self.min_charge
-
-    @property
-    def isotopes_overlap(self) -> bool:
-        return self.isotope_error != 0 and self.mz_tolerance >= PROTON_MASS / (
-            2 * self.max_charge
-        )

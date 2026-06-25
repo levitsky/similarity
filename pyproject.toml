@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "similarity"
-version = "0.2"
+version = "0.3"
 description = "Predict mass spectra of peptides and measure their similarity"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -25,11 +25,11 @@ dependencies = [
     "koinapy",
     "tritonclient[grpc]",  # for koinapy
     "pyteomics.cythonize",
-    "pyteomics @ git+https://github.com/levitsky/pyteomics.git",
+    "pyteomics >= 5.0",
     "lxml",
     "scipy",
     "pandas",
-    # spectram_similarity is not installable via pip yet
+    # spectral_similarity is not installable via pip yet
     # "spectral_similarity @ git+https://github.com/jlapin1/spectral_similarity"
 ]
 
