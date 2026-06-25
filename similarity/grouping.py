@@ -150,18 +150,6 @@ class GroupingWorker(ExperimentWorker):
         scores = np.frombuffer(scores_bytes, dtype=np.float32)
         return i, matches, scores
 
-    def isotopes_overlap(self, batch: int) -> bool:
-        if self.config.isotope_error == 0:
-            return False
-        bsize = self.config.batch_size
-        last_idx = min((batch + 1) * bsize, self.mzrt.shape[0]) - 1
-        biggest_mz = self.mzrt[last_idx, 0]
-        if self.config.min_charge == self.config.max_charge:
-            biggest_charge = self.config.min_charge
-        else:
-            biggest_charge = self.charges[batch * bsize : (batch + 1) * bsize].max()
-        return self.config.absolute_mz_error(biggest_mz) >= PROTON_MASS / biggest_charge
-
     def process_batch(
         self,
         batch: int,
@@ -192,8 +180,8 @@ class GroupingWorker(ExperimentWorker):
             matches = []
             scores = []
             j = x + offset
-            if self.isotopes_overlap(batch):
-                # if isotopes can overlap, we need to deduplicate the indices from different trees
+            if self.config.isotope_error > 0:
+                # if isotopes are configured, we need to deduplicate the indices from different trees
                 indices = set()
                 for ix in zindices:
                     indices.update(ix)
