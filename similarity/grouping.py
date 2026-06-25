@@ -150,17 +150,14 @@ class GroupingWorker(ExperimentWorker):
         scores = np.frombuffer(scores_bytes, dtype=np.float32)
         return i, matches, scores
 
-    def isotopes_overlap(self, batch: int) -> bool:
-        if self.config.isotope_error == 0:
-            return False
-        bsize = self.config.batch_size
-        last_idx = min((batch + 1) * bsize, self.mzrt.shape[0]) - 1
-        biggest_mz = self.mzrt[last_idx, 0]
-        if self.config.min_charge == self.config.max_charge:
-            biggest_charge = self.config.min_charge
-        else:
-            biggest_charge = self.charges[batch * bsize : (batch + 1) * bsize].max()
-        return self.config.absolute_mz_error(biggest_mz) >= PROTON_MASS / biggest_charge
+    def process_pair(
+        self, i: int, j: int, matches: list[int], scores: list[float]
+    ) -> None:
+        if i < j and j >= self.previous_end and self.within_tolerance(i, j):
+            score = self.score_pair(i, j)
+            if score >= self.config.score_threshold:
+                matches.append(i)
+                scores.append(score)
 
     def process_batch(
         self,
@@ -192,19 +189,20 @@ class GroupingWorker(ExperimentWorker):
             matches = []
             scores = []
             j = x + offset
-            if self.isotopes_overlap(batch):
-                # if isotopes can overlap, we need to deduplicate the indices from different trees
-                indices = set()
+            if self.config.isotope_error > 0:
+                # Deduplicate candidate indices while iterating over tree pairs.
+                seen = set()
                 for ix in zindices:
-                    indices.update(ix)
+                    for i in ix:
+                        if i in seen:
+                            continue
+                        seen.add(i)
+                        self.process_pair(i, j, matches, scores)
             else:
                 indices = itertools.chain.from_iterable(zindices)
-            for i in indices:
-                if i < j and j >= self.previous_end and self.within_tolerance(i, j):
-                    score = self.score_pair(i, j)
-                    if score >= self.config.score_threshold:
-                        matches.append(i)
-                        scores.append(score)
+                for i in indices:
+                    self.process_pair(i, j, matches, scores)
+
             if matches:
                 yield (j, matches, scores)
 

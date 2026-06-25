@@ -28,6 +28,9 @@
 - If a task explicitly requests changing a correctness invariant, state all downstream components affected
   before making any edits and ask for confirmation if the impact spans more than one module.
 - Overlap handling between subsets must avoid both missed boundary pairs and duplicate pairs.
+- Pairs must be unique in the final score array, and repeated processing of index pairs should be avoided.
+  This is especially important when `isotope_error` is greater than zero,
+  as the same peptide may appear in multiple isotopic forms.
 - In grouping, boundary inclusion must keep the first non-overlap index in scope.
 - `score_array` records are structured as `(i, j, score)` with consistent global peptide indices.
 
