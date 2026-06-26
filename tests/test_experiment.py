@@ -304,7 +304,7 @@ class ExperimentTest(TestBase):
             variable_mods=["UNIMOD:35|Position:M"],
         )
         with Experiment(config) as exp:
-            fixture = MzIrtDataFrame()
+            fixture = Experiment.peptides
             sequences = fixture.generate_sequences(exp)
             mz_values = fixture.mz_array(exp, sequences)
 

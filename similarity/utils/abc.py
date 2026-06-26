@@ -55,6 +55,13 @@ class Fixture(ABC):
             )
         return self._data[obj]
 
+    def get(self, obj: Any, name: str) -> Any:
+        """
+        Use another fixture on the same experiment. This automatically adds the suffix to the name of the fixture, if applicable.
+        """
+        attr = name + self.suffix
+        return getattr(obj, attr)
+
     def __set__(self, obj, value):
         raise AttributeError(f"Cannot set value of fixture {self.__class__.__name__}")
 
@@ -64,7 +71,7 @@ class Fixture(ABC):
             return ""
         right = name.rsplit("_", 1)[1]
         if right.isdigit():
-            return right
+            return "_" + right
         return ""
 
     def __set_name__(self, owner, name):
@@ -163,8 +170,13 @@ class Cache(ABC):
 class SpectrumCollection(ABC):
     """A container of spectra for use in grouping and scoring. Needs to support returning spectra by integer peptide index and support multiprocessing."""
 
-    def __init__(self, experiment: "Experiment"):
+    def __init__(self, experiment: "Experiment", suffix: str):
         self.experiment = experiment
+        self.suffix = suffix
+
+    @property
+    def peptides(self) -> "pd.DataFrame":
+        return getattr(self.experiment, "peptides" + self.suffix)
 
     @abstractmethod
     def __getitem__(
@@ -173,7 +185,7 @@ class SpectrumCollection(ABC):
         pass
 
     @abstractmethod
-    def fill_from_cache(self, experiment: "Experiment", index: "SpectrumCache") -> None:
+    def fill_from_cache(self, index: "SpectrumCache") -> None:
         """Fill missing spectra from cache."""
         pass
 
@@ -212,11 +224,3 @@ class SpectrumCollection(ABC):
             intensities = intensities[idx]
         order = np.argsort(mz, kind="mergesort")
         return mz[order], intensities[order]
-
-
-class CacheBasedSpectrumCollection(SpectrumCollection):
-    """A SpectrumCollection that just retrieves spectra from cache on demand."""
-
-    def __init__(self, experiment: "Experiment", index: "SpectrumCache"):
-        super().__init__(experiment)
-        self.index = index

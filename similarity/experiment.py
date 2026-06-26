@@ -1,6 +1,6 @@
 import logging
 import traceback
-from .utils.config import Config
+from .utils.config import Config, SingleInputConfig, DualInputConfig
 from .utils.abc import Cache, IndexType
 from .prediction import PredictedSpectrumCollection, MzIrtDataFrame, Offsets
 from .grouping import SpectrumGrouping
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from pathlib import Path
     import pandas as pd
     import numpy as np
-    from .utils.abc import SpectrumCollection, Cache
+    from .utils.abc import Cache
 
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ class SingleInputExperiment(Experiment):
 
     def __init__(
         self,
-        config: Config,
+        config: SingleInputConfig,
         peptide_table: "Path | str | None" = None,
     ):
         super().__init__(config)
@@ -82,3 +82,32 @@ class SingleInputExperiment(Experiment):
         self.__class__.peptides.close(self)
         if self.__class__.predicted_spectra.exists(self):
             self.predicted_spectra.close()
+
+
+class DualInputExperiment(Experiment):
+    peptides_1 = MzIrtDataFrame()
+    peptides_2 = MzIrtDataFrame()
+    predicted_spectra_1 = PredictedSpectrumCollection()
+    predicted_spectra_2 = PredictedSpectrumCollection()
+
+    def __init__(
+        self,
+        config: DualInputConfig,
+        peptide_table_1: "Path | str | None" = None,
+        peptide_table_2: "Path | str | None" = None,
+    ):
+        super().__init__(config)
+        self.peptide_table_1 = peptide_table_1
+        self.peptide_table_2 = peptide_table_2
+
+    def __reduce__(self) -> tuple:
+        return self.__class__, (self.config, self.peptide_table_1, self.peptide_table_2)
+
+    def _cleanup(self):
+        super()._cleanup()
+        self.__class__.peptides_1.close(self)
+        self.__class__.peptides_2.close(self)
+        if self.__class__.predicted_spectra_1.exists(self):
+            self.predicted_spectra_1.close()
+        if self.__class__.predicted_spectra_2.exists(self):
+            self.predicted_spectra_2.close()

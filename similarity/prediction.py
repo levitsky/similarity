@@ -38,14 +38,16 @@ class PredictedSpectrumCollection(Fixture):
 
     def evaluate(self, experiment: "Experiment") -> "SpectrumCollection":
         index = cast("SpectrumCache | None", experiment.cache[IndexType.INTENSITY])
-        collection = experiment.config.spectrum_collection.value(experiment)
+        collection = experiment.config.spectrum_collection.value(
+            experiment, self.suffix
+        )
         if index is not None:
-            collection.fill_from_cache(experiment, index)
+            collection.fill_from_cache(index)
         cached = collection.spectra_available
         if cached.all():
             logger.info("All spectra are cached, skipping prediction")
             return collection
-        prediction_inputs = experiment.peptides.loc[~cached]
+        prediction_inputs = collection.peptides.loc[~cached]
         model = Koina(
             experiment.config.model_intensity.name, experiment.config.koina_host
         )
@@ -200,7 +202,7 @@ class MzIrtDataFrame(Fixture):
                 "Allocating %.2f MB of shared memory for %s", size / 2**20, name
             )
             shm = SharedMemory(
-                name=f"{name}-{id(experiment)}",
+                name=f"{name}{self.suffix}-{id(experiment)}",
                 create=True,
                 size=size,
             )
@@ -339,7 +341,9 @@ class MzIrtDataFrame(Fixture):
         )
 
     def generate_sequences(self, experiment: "Experiment") -> np.ndarray:
-        input_file = cast("str | Path", experiment.config.input_file)
+        attr = self.get(experiment.config, "input_file")
+        input_file = cast("str | Path", attr)
+        logger.debug("Generating peptide sequences from %s as %s", input_file, attr)
         seq = np.unique(np.loadtxt(input_file, dtype=bytes))
 
         logger.info("Loaded %d unique peptide sequences from %s", len(seq), input_file)
@@ -506,9 +510,10 @@ class MzIrtDataFrame(Fixture):
                 experiment.config.subsets,
             )
             raise ValueError("Subset number is not set")
-        if experiment.peptide_table is not None:
-            logger.info("Loading peptide table from %s", experiment.peptide_table)
-            return self.load_peptide_table(experiment.peptide_table, experiment)
+        peptide_table = self.get(experiment, "peptide_table")
+        if peptide_table is not None:
+            logger.info("Loading peptide table from %s", peptide_table)
+            return self.load_peptide_table(peptide_table, experiment)
 
         seq = self.generate_sequences(experiment)
         if seq.size == 0:
