@@ -17,15 +17,14 @@ logger = logging.getLogger(__name__)
 class Fixture(ABC):
     """A descriptor for a calculation result. The result is calculated lazily on first access and then cached for subsequent accesses."""
 
-    _data: dict["Experiment", Any] = {}
+    _data: dict["Experiment", Any]
 
     @abstractmethod
     def evaluate(self, experiment: "Experiment") -> Any:
         pass
 
-    def __init_subclass__(cls) -> None:
-        cls._data = {}
-        super().__init_subclass__()
+    def __init__(self):
+        self._data = {}
 
     @overload
     def __get__(self, obj: None, objtype: type) -> Self: ...
@@ -80,9 +79,8 @@ class Fixture(ABC):
             self.suffix,
         )
 
-    @classmethod
-    def exists(cls, obj) -> bool:
-        return obj in cls._data
+    def exists(self, obj: "Experiment") -> bool:
+        return obj in self._data
 
 
 class IndexType(Enum):

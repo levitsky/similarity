@@ -64,7 +64,7 @@ class Experiment:
 
 class SingleInputExperiment(Experiment):
     peptides = MzIrtDataFrame()
-    predicted_spectra = cast("SpectrumCollection", PredictedSpectrumCollection())
+    predicted_spectra = PredictedSpectrumCollection()
 
     def __init__(
         self,
@@ -80,5 +80,5 @@ class SingleInputExperiment(Experiment):
     def _cleanup(self):
         super()._cleanup()
         self.__class__.peptides.close(self)
-        if PredictedSpectrumCollection.exists(self):
+        if self.__class__.predicted_spectra.exists(self):
             self.predicted_spectra.close()
