@@ -64,10 +64,10 @@ class ExperimentRunner:
         self.score_df_file = score_df_file
 
     def run_subset(self, subset: int):
-        from ..experiment import Experiment
+        from ..experiment import SingleInputExperiment
 
         c = replace(self.config, subset=subset)
-        with Experiment(c, self.peptide_table) as experiment:
+        with SingleInputExperiment(c, self.peptide_table) as experiment:
             logger.info(
                 "Running experiment %d for subset %d of %d",
                 id(experiment),
@@ -90,14 +90,14 @@ class ExperimentRunner:
                 experiment.score_df.to_csv(score_df_path, index=False)
 
     def create_full_peptide_table(self):
-        from ..experiment import Experiment
+        from ..experiment import SingleInputExperiment
 
         logger.info(
             "Creating full peptide table for the entire dataset at %s",
             self.peptide_table,
         )
         c = replace(self.config, subsets=1)
-        with Experiment(c) as experiment:
+        with SingleInputExperiment(c) as experiment:
             df = experiment.peptides
             df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
             df.to_csv(self.peptide_table, index=False, sep="\t")

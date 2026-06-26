@@ -88,15 +88,21 @@ class Offsets(Fixture):
 
 
 class MzIrtDataFrame(Fixture):
-    _shared_memory: dict["Experiment", dict[str, SharedMemory]] = {}
+    _shared_memory: dict["Experiment", dict[str, SharedMemory]]
     batch_size: int = 50000
 
-    @classmethod
-    def close(cls, experiment: "Experiment"):
-        shm_dict = cls._shared_memory.pop(experiment, {})
+    def __init__(self):
+        super().__init__()
+        self._shared_memory = {}
+
+    def close(self, experiment: "Experiment"):
+        shm_dict = self._shared_memory.pop(experiment, {})
         for name, shm in shm_dict.items():
             logger.debug(
-                "Closing shared memory for experiment %d, name %s", id(experiment), name
+                "Closing %s shared memory for experiment %d, name %s",
+                self.name,
+                id(experiment),
+                name,
             )
             shm.close()
             shm.unlink()
@@ -177,16 +183,15 @@ class MzIrtDataFrame(Fixture):
         else:
             logger.info("All %s values are cached, skipping prediction", name)
 
-    @classmethod
     def shared_array(
-        cls,
+        self,
         experiment: "Experiment",
         name: str,
         shape: tuple[int, ...],
         dtype: "DTypeLike",
     ) -> np.ndarray:
-        cls._shared_memory.setdefault(experiment, {})
-        shm_dict = cls._shared_memory[experiment]
+        self._shared_memory.setdefault(experiment, {})
+        shm_dict = self._shared_memory[experiment]
         if name in shm_dict:
             shm = shm_dict[name]
         else:

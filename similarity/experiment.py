@@ -19,12 +19,14 @@ logger = logging.getLogger(__name__)
 
 class Experiment:
     offsets = cast("Sequence[tuple[int, int]]", Offsets())
-    peptides = cast("pd.DataFrame", MzIrtDataFrame())
-    predicted_spectra = cast("SpectrumCollection", PredictedSpectrumCollection())
     score_array = cast("np.ndarray", SpectrumGrouping())
     score_df = cast("pd.DataFrame", ScoresDataFrame())
+    config: Config
 
-    def __init__(self, config: Config, peptide_table: "Path | str | None" = None):
+    def __init__(
+        self,
+        config: Config,
+    ):
         self.config = config
         self.cache: dict[IndexType, "Cache | None"] = {
             index_type: config.cache.value.get_index(index_type, self)
@@ -35,15 +37,11 @@ class Experiment:
             id(self),
             self.cache,
         )
-        self.peptide_table = peptide_table
 
     def __reduce__(self) -> tuple:
-        return self.__class__, (self.config, self.peptide_table)
+        return self.__class__, (self.config,)
 
     def _cleanup(self):
-        MzIrtDataFrame.close(self)
-        if PredictedSpectrumCollection.exists(self):
-            self.predicted_spectra.close()
         while self.cache:
             _, index = self.cache.popitem()
             if index is not None:
@@ -62,3 +60,25 @@ class Experiment:
             "\n".join(traceback.format_tb(tb)) if tb else "No traceback",
         )
         self._cleanup()
+
+
+class SingleInputExperiment(Experiment):
+    peptides = MzIrtDataFrame()
+    predicted_spectra = cast("SpectrumCollection", PredictedSpectrumCollection())
+
+    def __init__(
+        self,
+        config: Config,
+        peptide_table: "Path | str | None" = None,
+    ):
+        super().__init__(config)
+        self.peptide_table = peptide_table
+
+    def __reduce__(self) -> tuple:
+        return self.__class__, (self.config, self.peptide_table)
+
+    def _cleanup(self):
+        super()._cleanup()
+        self.__class__.peptides.close(self)
+        if PredictedSpectrumCollection.exists(self):
+            self.predicted_spectra.close()

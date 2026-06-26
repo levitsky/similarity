@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import logging
 from datetime import datetime
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, overload, Self
 from enum import Enum
 import numpy as np
 
@@ -27,7 +27,15 @@ class Fixture(ABC):
         cls._data = {}
         super().__init_subclass__()
 
+    @overload
+    def __get__(self, obj: None, objtype: type) -> Self: ...
+
+    @overload
+    def __get__(self, obj: "Experiment", objtype: type | None) -> Any: ...
+
     def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self
         if obj not in self._data:
             logger.info(
                 "Started evaluating %s for %s %d",
@@ -50,6 +58,27 @@ class Fixture(ABC):
 
     def __set__(self, obj, value):
         raise AttributeError(f"Cannot set value of fixture {self.__class__.__name__}")
+
+    @staticmethod
+    def get_suffix(name: str) -> str:
+        if "_" not in name:
+            return ""
+        right = name.rsplit("_", 1)[1]
+        if right.isdigit():
+            return right
+        return ""
+
+    def __set_name__(self, owner, name):
+        self.name = name
+        self.suffix = self.get_suffix(name)
+        logger.debug(
+            "Setting name of fixture %s of %s %d to %s with suffix %s",
+            self.__class__.__name__,
+            owner.__class__.__name__,
+            id(owner),
+            self.name,
+            self.suffix,
+        )
 
     @classmethod
     def exists(cls, obj) -> bool:

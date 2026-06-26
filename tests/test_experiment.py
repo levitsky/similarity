@@ -5,11 +5,11 @@ import pandas as pd
 import dataclasses
 import tempfile
 from collections import Counter
-from similarity.experiment import Experiment
+from similarity.experiment import SingleInputExperiment as Experiment
 from similarity.grouping import GroupingWorker, SpectrumGrouping
 from similarity.prediction import MzIrtDataFrame
 from similarity.utils.config import (
-    Config,
+    SingleInputConfig as Config,
     KoinaIntensityModel,
     KoinaRTModel,
     KoinaCCSModel,
@@ -115,7 +115,7 @@ class ExperimentTest(TestBase):
             peptide_file = Path(tmpdir) / "peptides.tsv"
             source.to_csv(peptide_file, index=False, sep="\t")
             with Experiment(self.config) as exp:
-                loaded = MzIrtDataFrame().load_peptide_table(peptide_file, exp)
+                loaded = Experiment.peptides.load_peptide_table(peptide_file, exp)
                 self.assertEqual(list(loaded.columns), list(source.columns))
 
                 seq = loaded["peptide_sequences"].to_numpy(copy=False)
@@ -137,7 +137,7 @@ class ExperimentTest(TestBase):
                     np.allclose(loaded["m/z"].to_numpy(copy=False), source["m/z"])
                 )
 
-                shm = MzIrtDataFrame._shared_memory[exp]
+                shm = Experiment.peptides._shared_memory[exp]
                 shm_seq = np.ndarray(
                     shape=(2,), dtype=seq.dtype, buffer=shm["peptide_sequences"].buf
                 )
@@ -177,7 +177,7 @@ class ExperimentTest(TestBase):
             peptide_file = Path(tmpdir) / "peptides_ccs.tsv"
             source.to_csv(peptide_file, index=False, sep="\t")
             with Experiment(config) as exp:
-                loaded = MzIrtDataFrame().load_peptide_table(peptide_file, exp)
+                loaded = Experiment.peptides.load_peptide_table(peptide_file, exp)
                 self.assertTrue(
                     np.allclose(loaded["ccs"].to_numpy(copy=False), source["ccs"])
                 )

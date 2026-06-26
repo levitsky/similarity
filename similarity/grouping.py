@@ -257,6 +257,7 @@ class GroupingWorker(ExperimentWorker):
 
 class SpectrumGrouping(Fixture):
     max_queue_size: int = 100000
+    dtype = np.dtype([("i", np.int32), ("j", np.int32), ("score", np.float32)])
 
     def kdtree(
         self, experiment: "Experiment", factors: np.ndarray, isotope: int = 0
@@ -320,7 +321,7 @@ class SpectrumGrouping(Fixture):
         )
         nb = self.nbatches(experiment)
         logger.info("Processing %d spectra in %d batches...", trees[0].n, nb)
-        dtype = np.dtype([("i", np.int32), ("j", np.int32), ("score", np.float32)])
+
         # add global offset to account for the entire peptide dataframe being a subset
         global_offset = experiment.peptides.index[0]
         if experiment.config.subset > 1:
@@ -342,7 +343,9 @@ class SpectrumGrouping(Fixture):
                     in_queue,
                     out_queue,
                     config=experiment.config,
-                    shared_memory=MzIrtDataFrame._shared_memory[experiment],
+                    shared_memory=experiment.__class__.peptides._shared_memory[
+                        experiment
+                    ],
                     nbatches=nb,
                     shape=(
                         len(experiment.peptides),
@@ -383,7 +386,7 @@ class SpectrumGrouping(Fixture):
                         if count % experiment.config.batch_size == 0:
                             logger.debug("Processed %d peptides...", count)
 
-            scores = np.fromiter(produce_results(), dtype=dtype)
+            scores = np.fromiter(produce_results(), dtype=self.dtype)
             for worker in workers:
                 worker.join()
         else:
@@ -404,7 +407,9 @@ class SpectrumGrouping(Fixture):
                     3 if experiment.config.model_ccs is not None else 2,
                 ),
                 dtype=np.float32,
-                buffer=MzIrtDataFrame._shared_memory[experiment]["mzrt"].buf,
+                buffer=experiment.__class__.peptides._shared_memory[experiment][
+                    "mzrt"
+                ].buf,
             )
             pseudoworker.peptides = experiment.peptides["peptide_sequences"].values
             pseudoworker.charges = experiment.peptides["precursor_charges"].values
@@ -416,7 +421,7 @@ class SpectrumGrouping(Fixture):
                         for m, s in zip(matches, scores):
                             yield (i + global_offset, m + global_offset, s)
 
-            scores = np.fromiter(produce_results(), dtype=dtype)
+            scores = np.fromiter(produce_results(), dtype=self.dtype)
         logger.info(
             "Finished scoring, found %d pairs with score above %f",
             len(scores),
