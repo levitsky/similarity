@@ -1,13 +1,13 @@
-from typing import TYPE_CHECKING, Generic
+from typing import TYPE_CHECKING
 import logging
 import numpy as np
 from pandas import DataFrame
 from multiprocessing.shared_memory import SharedMemory
-from tqdm import tqdm
 from ..abc import SpectrumCollection
 
 if TYPE_CHECKING:
-    from ..abc import Index
+    from pathlib import Path
+    from ..cache.common import SpectrumCache
     from ...experiment import Experiment
     from numpy.typing import NDArray, DTypeLike
     import numpy as np
@@ -76,7 +76,7 @@ class SharedArraySpectrumCollection(SpectrumCollection):
             buffer=self.shared_memory.buf,
         )
 
-    def fill_from_cache(self, experiment: "Experiment", index: "Index") -> None:
+    def fill_from_cache(self, experiment: "Experiment", index: "SpectrumCache") -> None:
         spectra = [[] for _ in range(len(experiment.peptides))]
         index.fill_from_cache(experiment.peptides, spectra)
         for i, cached in enumerate(spectra):
@@ -97,6 +97,11 @@ class SharedArraySpectrumCollection(SpectrumCollection):
             len_spectrum = len(mz)
             self.array[loc - self.offset, 0, :len_spectrum] = mz
             self.array[loc - self.offset, 1, :len_spectrum] = intensities
+
+    def save(self, file: "str | Path") -> None:
+        """Save the collection to a file."""
+        np.save(file, self.array)
+        logger.info("Saved predicted spectra to %s", file)
 
     @property
     def spectra_available(self) -> "NDArray[np.bool_]":

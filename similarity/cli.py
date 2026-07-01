@@ -64,6 +64,7 @@ def parse_args(
         "verbose",
         "output_file",
         "peptide_file",
+        "spectrum_file",
         "load_peptide_table",
         "array_file",
         "log_file",
@@ -126,6 +127,13 @@ def experiment() -> None:
         help="Path to save the peptide table",
     )
     peptides.add_argument(
+        "-s",
+        "--spectrum-file",
+        nargs="?",
+        type=Path,
+        help="Path to save the predicted spectra as a .npy file",
+    )
+    peptides.add_argument(
         "-lp",
         "--load-peptide-table",
         nargs="?",
@@ -164,6 +172,9 @@ def experiment() -> None:
             df.to_csv(args.peptide_file, index=False, sep="\t")
             logger.info("Saved peptide table to %s", args.peptide_file)
 
+        if args.spectrum_file:
+            exp.predicted_spectra.save(args.spectrum_file)
+
         if args.output_file:
             exp.score_df.to_csv(args.output_file, index=False, sep="\t")
             logger.info("Saved results to %s", args.output_file)
@@ -182,6 +193,13 @@ def time_scoring() -> None:
         nargs="?",
         type=Path,
         help="Path to save the peptide table",
+    )
+    peptides.add_argument(
+        "-s",
+        "--spectrum-file",
+        nargs="?",
+        type=Path,
+        help="Path to save the predicted spectra as a .npy file",
     )
     peptides.add_argument(
         "-lp",
