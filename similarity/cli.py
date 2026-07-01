@@ -127,18 +127,18 @@ def experiment() -> None:
         help="Path to save the peptide table",
     )
     peptides.add_argument(
-        "-s",
-        "--spectrum-file",
-        nargs="?",
-        type=Path,
-        help="Path to save the predicted spectra as a .npy file",
-    )
-    peptides.add_argument(
         "-lp",
         "--load-peptide-table",
         nargs="?",
         type=Path,
         help="Load an existing peptide table",
+    )
+    p.add_argument(
+        "-s",
+        "--spectrum-file",
+        nargs="?",
+        type=Path,
+        help="Path to save the predicted spectra as a .npy file",
     )
     p.add_argument(
         "-a",
@@ -195,18 +195,18 @@ def time_scoring() -> None:
         help="Path to save the peptide table",
     )
     peptides.add_argument(
-        "-s",
-        "--spectrum-file",
-        nargs="?",
-        type=Path,
-        help="Path to save the predicted spectra as a .npy file",
-    )
-    peptides.add_argument(
         "-lp",
         "--load-peptide-table",
         nargs="?",
         type=Path,
         help="Load an existing peptide table",
+    )
+    p.add_argument(
+        "-s",
+        "--spectrum-file",
+        nargs="?",
+        type=Path,
+        help="Path to save the predicted spectra as a .npy file",
     )
     p.add_argument(
         "-a",
