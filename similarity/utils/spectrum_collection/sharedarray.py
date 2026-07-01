@@ -51,6 +51,35 @@ class SharedArraySpectrumCollection(SpectrumCollection):
             buffer=self.shared_memory.buf,
         )
         self.array.fill(np.nan)
+        if experiment.spectrum_file:
+            self.load_from_file(experiment.spectrum_file)
+
+    def load_from_file(self, file: "str | Path") -> None:
+        arr = np.load(file)
+        nspectra, narrays, maxpeaks = arr.shape
+        if narrays != 2:
+            raise ValueError(
+                f"Unsupported spectrum array file format. Expected shape {self.shape}, got {arr.shape}"
+            )
+        if maxpeaks > self.shape[2]:
+            raise NotImplementedError(
+                f"Saved array has {maxpeaks} peaks, but expected at most {self.shape[2]}. Reduction currently not implemented."
+            )
+        if maxpeaks < self.shape[2]:
+            raise ValueError(
+                f"Saved array has {maxpeaks} peaks, but expected at least {self.shape[2]}. Cannot load into larger array."
+            )
+        if nspectra < self.shape[0]:
+            raise ValueError(
+                f"Saved array has {nspectra} spectra, but expected at least {self.shape[0]}. Cannot load into larger array."
+            )
+        if nspectra > self.shape[0]:
+            if self.experiment.config.subsets == 1:
+                raise ValueError(
+                    f"Saved array has {nspectra} spectra, but expected at most {self.shape[0]}. Cannot load into smaller array."
+                )
+            logger.info("Loading a subset of the spectrum array from file %s", file)
+            self.array[:, :, :] = arr[self.offset : self.offset + self.shape[0], :, :]
 
     def __getitem__(
         self, key: int
@@ -100,8 +129,8 @@ class SharedArraySpectrumCollection(SpectrumCollection):
 
     def save(self, file: "str | Path") -> None:
         """Save the collection to a file."""
+        logger.info("Saving predicted spectra to %s...", file)
         np.save(file, self.array)
-        logger.info("Saved predicted spectra to %s", file)
 
     @property
     def spectra_available(self) -> "NDArray[np.bool_]":

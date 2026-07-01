@@ -2,7 +2,7 @@ import multiprocessing as mp
 from abc import ABC, abstractmethod
 import logging
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from pathlib import Path
 
 if TYPE_CHECKING:
@@ -44,15 +44,19 @@ class ExperimentRunner:
         peptide_table: str | Path,
         jobs: int = 1,  # unsupported for now
         create_peptide_table: bool = True,
+        spectrum_file: str | None = None,
+        create_spectrum_file: bool = False,
         array_file: str | None = None,
         score_df_file: str | None = None,
     ):
         logger.debug(
-            "Initializing ExperimentRunner with config: %s, peptide_table: %s, jobs: %d, create_peptide_table: %s, array_file: %s, score_df_file: %s",
+            "Initializing ExperimentRunner with config: %s, peptide_table: %s, jobs: %d, create_peptide_table: %s, spectrum_file: %s, create_spectrum_file: %s, array_file: %s, score_df_file: %s",
             config,
             peptide_table,
             jobs,
             create_peptide_table,
+            spectrum_file,
+            create_spectrum_file,
             array_file,
             score_df_file,
         )
@@ -60,6 +64,8 @@ class ExperimentRunner:
         # self.jobs = jobs
         self.create_peptide_table = create_peptide_table
         self.peptide_table = peptide_table
+        self.spectrum_file = spectrum_file
+        self.create_spectrum_file = create_spectrum_file
         self.array_file = array_file
         self.score_df_file = score_df_file
 
@@ -67,7 +73,7 @@ class ExperimentRunner:
         from ..experiment import Experiment
 
         c = replace(self.config, subset=subset)
-        with Experiment(c, self.peptide_table) as experiment:
+        with Experiment(c, self.peptide_table, self.spectrum_file) as experiment:
             logger.info(
                 "Running experiment %d for subset %d of %d",
                 id(experiment),
@@ -89,22 +95,29 @@ class ExperimentRunner:
                 )
                 experiment.score_df.to_csv(score_df_path, index=False)
 
-    def create_full_peptide_table(self):
+    def create_prerequisites(self):
         from ..experiment import Experiment
 
-        logger.info(
-            "Creating full peptide table for the entire dataset at %s",
-            self.peptide_table,
-        )
         c = replace(self.config, subsets=1)
         with Experiment(c) as experiment:
-            df = experiment.peptides
-            df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
-            df.to_csv(self.peptide_table, index=False, sep="\t")
+            if self.create_peptide_table:
+                logger.info(
+                    "Creating full peptide table for the entire dataset at %s",
+                    self.peptide_table,
+                )
+                df = experiment.peptides
+                df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
+                df.to_csv(self.peptide_table, index=False, sep="\t")
+            if self.create_spectrum_file:
+                logger.info(
+                    "Creating spectrum file for the entire dataset at %s",
+                    self.spectrum_file,
+                )
+                experiment.predicted_spectra.save(cast(str, self.spectrum_file))
 
     def run(self):
-        if self.create_peptide_table:
-            self.create_full_peptide_table()
+        if self.create_peptide_table or self.create_spectrum_file:
+            self.create_prerequisites()
 
         for subset in range(1, self.config.subsets + 1):
             self.run_subset(subset)

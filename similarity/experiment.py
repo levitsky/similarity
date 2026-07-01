@@ -24,7 +24,12 @@ class Experiment:
     score_array = cast("np.ndarray", SpectrumGrouping())
     score_df = cast("pd.DataFrame", ScoresDataFrame())
 
-    def __init__(self, config: Config, peptide_table: "Path | str | None" = None):
+    def __init__(
+        self,
+        config: Config,
+        peptide_table: "Path | str | None" = None,
+        spectrum_file: "Path | str | None" = None,
+    ):
         self.config = config
         self.cache: dict[IndexType, "Cache | None"] = {
             index_type: config.cache.value.get_index(index_type, self)
@@ -36,9 +41,10 @@ class Experiment:
             self.cache,
         )
         self.peptide_table = peptide_table
+        self.spectrum_file = spectrum_file
 
     def __reduce__(self) -> tuple:
-        return self.__class__, (self.config, self.peptide_table)
+        return self.__class__, (self.config, self.peptide_table, self.spectrum_file)
 
     def _cleanup(self):
         MzIrtDataFrame.close(self)

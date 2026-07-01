@@ -260,6 +260,58 @@ class ExperimentTest(TestBase):
                         np.allclose(loaded["m/z"].to_numpy(copy=False), df["m/z"])
                     )
 
+    def _assert_score_arrays_equal(self, left, right):
+        left = left.copy()
+        right = right.copy()
+        left.sort()
+        right.sort()
+        self.assertEqual(left.shape, right.shape)
+        self.assertTrue(np.array_equal(left["i"], right["i"]))
+        self.assertTrue(np.array_equal(left["j"], right["j"]))
+        self.assertTrue(np.allclose(left["score"], right["score"], atol=1e-6))
+
+    def test_save_and_load_spectra_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            spectra_file = Path(tmpdir) / "spectra.npy"
+            self.assertFalse(spectra_file.exists())
+
+            with Experiment(self.config) as exp:
+                scores_saved = exp.score_array.copy()
+                exp.predicted_spectra.save(spectra_file)
+
+            with Experiment(self.config, spectrum_file=spectra_file) as exp:
+                loaded_scores = exp.score_array.copy()
+
+            self._assert_score_arrays_equal(loaded_scores, scores_saved)
+
+    def test_subset_scores_match_with_loaded_full_spectra(self):
+        subsets = 3
+        subset = 2
+        config_10k = dataclasses.replace(
+            self.config, input_file=Path("tests/10k_peptides.txt")
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            spectra_file = Path(tmpdir) / "spectra.npy"
+            self.assertFalse(spectra_file.exists())
+
+            with Experiment(config_10k) as exp_full:
+                _ = exp_full.score_array
+                exp_full.predicted_spectra.save(spectra_file)
+
+            subset_config = dataclasses.replace(
+                config_10k, subsets=subsets, subset=subset
+            )
+            with Experiment(subset_config) as exp_subset:
+                subset_scores = exp_subset.score_array.copy()
+
+            with Experiment(
+                subset_config, spectrum_file=spectra_file
+            ) as exp_subset_loaded:
+                subset_scores_loaded = exp_subset_loaded.score_array.copy()
+
+            self._assert_score_arrays_equal(subset_scores_loaded, subset_scores)
+
     def test_multiple_charges(self):
         config = dataclasses.replace(self.config, max_charge=3)
         with Experiment(config) as exp:

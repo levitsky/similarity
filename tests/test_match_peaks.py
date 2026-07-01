@@ -155,6 +155,7 @@ class MatchPeaksTest(unittest.TestCase):
                 }
             ),
             config=SimpleNamespace(max_peaks=3),
+            spectrum_file=None,
         )
         collection = SharedArraySpectrumCollection(experiment)
         spectra = {

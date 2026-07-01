@@ -133,12 +133,20 @@ def experiment() -> None:
         type=Path,
         help="Load an existing peptide table",
     )
-    p.add_argument(
+    spectra = p.add_mutually_exclusive_group()
+    spectra.add_argument(
         "-s",
         "--spectrum-file",
         nargs="?",
         type=Path,
         help="Path to save the predicted spectra as a .npy file",
+    )
+    spectra.add_argument(
+        "-ls",
+        "--load-spectrum-file",
+        nargs="?",
+        type=Path,
+        help="Load an existing predicted spectra .npy file",
     )
     p.add_argument(
         "-a",
@@ -159,13 +167,19 @@ def experiment() -> None:
             config=config,
             peptide_table=args.peptide_file or args.load_peptide_table,
             create_peptide_table=args.peptide_file is not None,
+            spectrum_file=args.spectrum_file or args.load_spectrum_file,
+            create_spectrum_file=args.spectrum_file is not None,
             array_file=str(args.array_file) if args.array_file else None,
             score_df_file=str(args.output_file) if args.output_file else None,
         )
         runner.run()
         return
 
-    with Experiment(config, peptide_table=args.load_peptide_table) as exp:
+    with Experiment(
+        config,
+        peptide_table=args.load_peptide_table,
+        spectrum_file=args.load_spectrum_file,
+    ) as exp:
         if args.peptide_file:
             df = exp.peptides
             df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
@@ -201,12 +215,20 @@ def time_scoring() -> None:
         type=Path,
         help="Load an existing peptide table",
     )
-    p.add_argument(
+    spectra = p.add_mutually_exclusive_group()
+    spectra.add_argument(
         "-s",
         "--spectrum-file",
         nargs="?",
         type=Path,
         help="Path to save the predicted spectra as a .npy file",
+    )
+    spectra.add_argument(
+        "-ls",
+        "--load-spectrum-file",
+        nargs="?",
+        type=Path,
+        help="Load an existing predicted spectra .npy file",
     )
     p.add_argument(
         "-a",
@@ -218,12 +240,19 @@ def time_scoring() -> None:
     args, kw, logger = parse_args(p)
 
     config = Config(**kw)
-    with Experiment(config, peptide_table=args.load_peptide_table) as exp:
+    with Experiment(
+        config,
+        peptide_table=args.load_peptide_table,
+        spectrum_file=args.load_spectrum_file,
+    ) as exp:
         if args.peptide_file:
             df = exp.peptides
             df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
             df.to_csv(args.peptide_file, index=False, sep="\t")
             logger.info("Saved peptide table to %s", args.peptide_file)
+        if args.spectrum_file:
+            exp.predicted_spectra.save(args.spectrum_file)
+            logger.info("Saved predicted spectra to %s", args.spectrum_file)
         _ = exp.predicted_spectra  # Ensure spectra are predicted before timing
         logger.info("Timing the scoring...")
         start_time = datetime.now()
