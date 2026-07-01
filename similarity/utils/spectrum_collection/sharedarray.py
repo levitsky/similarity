@@ -80,6 +80,9 @@ class SharedArraySpectrumCollection(SpectrumCollection):
                 )
             logger.info("Loading a subset of the spectrum array from file %s", file)
             self.array[:, :, :] = arr[self.offset : self.offset + self.shape[0], :, :]
+        else:
+            logger.info("Loading the full spectrum array from file %s", file)
+            self.array[:, :, :] = arr
 
     def __getitem__(
         self, key: int

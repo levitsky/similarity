@@ -66,6 +66,7 @@ def parse_args(
         "peptide_file",
         "spectrum_file",
         "load_peptide_table",
+        "load_spectrum_file",
         "array_file",
         "log_file",
     ]:

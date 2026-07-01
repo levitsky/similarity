@@ -280,6 +280,7 @@ class ExperimentTest(TestBase):
                 exp.predicted_spectra.save(spectra_file)
 
             with Experiment(self.config, spectrum_file=spectra_file) as exp:
+                self.assertTrue(exp.predicted_spectra.spectra_available.all())
                 loaded_scores = exp.score_array.copy()
 
             self._assert_score_arrays_equal(loaded_scores, scores_saved)
@@ -308,6 +309,7 @@ class ExperimentTest(TestBase):
             with Experiment(
                 subset_config, spectrum_file=spectra_file
             ) as exp_subset_loaded:
+                self.assertTrue(exp_subset_loaded.predicted_spectra.spectra_available.all())
                 subset_scores_loaded = exp_subset_loaded.score_array.copy()
 
             self._assert_score_arrays_equal(subset_scores_loaded, subset_scores)
