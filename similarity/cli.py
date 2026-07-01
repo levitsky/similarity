@@ -228,7 +228,7 @@ def time_scoring() -> None:
         "--load-spectrum-file",
         nargs="?",
         type=Path,
-        help="Load an existing predicted spectra .npy file",
+        help="Load an existing predicted spectrum .npy file",
     )
     p.add_argument(
         "-a",
