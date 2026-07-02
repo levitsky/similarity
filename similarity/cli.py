@@ -1,6 +1,6 @@
 from .utils.config import Config, cache_args, CacheConfigType
 from .utils.cache import CacheType
-from .utils.utils import ExperimentRunner
+from .utils.utils import SingleInputExperimentRunner
 from .experiment import SingleInputExperiment, DualInputExperiment
 from pathlib import Path
 import numpy as np
@@ -182,8 +182,9 @@ def single_input_experiment() -> None:
             p.error(
                 "Running multiple subsets requires either --peptide-file or --load-peptide-table"
             )
-        runner = ExperimentRunner(
+        runner = SingleInputExperimentRunner(
             config=config,
+            input_file=args.input_file,
             peptide_table=args.peptide_file or args.load_peptide_table,
             create_peptide_table=args.peptide_file is not None,
             spectrum_file=args.spectrum_file or args.load_spectrum_file,
