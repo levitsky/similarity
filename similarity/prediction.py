@@ -341,7 +341,7 @@ class MzIrtDataFrame(Fixture):
         )
 
     def generate_sequences(self, experiment: "Experiment") -> np.ndarray:
-        attr = self.get(experiment.config, "input_file")
+        attr = self.get(experiment, "input_file")
         input_file = cast("str | Path", attr)
         logger.debug("Generating peptide sequences from %s as %s", input_file, attr)
         seq = np.unique(np.loadtxt(input_file, dtype=bytes))

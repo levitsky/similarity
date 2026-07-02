@@ -1,6 +1,6 @@
 import logging
 import traceback
-from .utils.config import Config, SingleInputConfig, DualInputConfig
+from .utils.config import Config
 from .utils.abc import Cache, IndexType
 from .prediction import PredictedSpectrumCollection, MzIrtDataFrame, Offsets
 from .grouping import SpectrumGrouping
@@ -68,11 +68,13 @@ class SingleInputExperiment(Experiment):
 
     def __init__(
         self,
-        config: SingleInputConfig,
+        config: Config,
+        input_file: "Path | str | None" = None,
         peptide_table: "Path | str | None" = None,
         spectrum_file: "Path | str | None" = None,
     ):
         super().__init__(config)
+        self.input_file = input_file
         self.peptide_table = peptide_table
         self.spectrum_file = spectrum_file
 
@@ -94,13 +96,17 @@ class DualInputExperiment(Experiment):
 
     def __init__(
         self,
-        config: DualInputConfig,
+        config: Config,
+        input_file_1: "Path | str | None" = None,
+        input_file_2: "Path | str | None" = None,
         peptide_table_1: "Path | str | None" = None,
         peptide_table_2: "Path | str | None" = None,
         spectrum_file_1: "Path | str | None" = None,
         spectrum_file_2: "Path | str | None" = None,
     ):
         super().__init__(config)
+        self.input_file_1 = input_file_1
+        self.input_file_2 = input_file_2
         self.peptide_table_1 = peptide_table_1
         self.peptide_table_2 = peptide_table_2
         self.spectrum_file_1 = spectrum_file_1

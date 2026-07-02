@@ -240,14 +240,3 @@ class Config(BaseConfig):
             object.__setattr__(
                 self, "cache_conf", CacheConfigType[self.cache.name].value()
             )
-
-
-@dataclass(frozen=True, slots=True)
-class SingleInputConfig(Config):
-    input_file: Path | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class DualInputConfig(Config):
-    input_file_1: Path | None = None
-    input_file_2: Path | None = None

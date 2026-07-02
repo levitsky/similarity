@@ -1,7 +1,7 @@
 from .utils.config import Config, cache_args, CacheConfigType
 from .utils.cache import CacheType
 from .utils.utils import ExperimentRunner
-from .experiment import Experiment
+from .experiment import SingleInputExperiment
 from pathlib import Path
 import numpy as np
 import logging
@@ -62,6 +62,7 @@ def parse_args(
     kw = vars(args).copy()
     for key in [
         "verbose",
+        "input_file",
         "output_file",
         "peptide_file",
         "spectrum_file",
@@ -116,6 +117,9 @@ def parse_args(
 
 def experiment() -> None:
     p = get_argparser(Config)
+    p.add_argument(
+        "-i", "--input-file", nargs="?", type=Path, help="Path to input peptide list"
+    )
     p.add_argument(
         "-o", "--output-file", nargs="?", type=Path, help="Path to output TSV file"
     )
@@ -176,8 +180,9 @@ def experiment() -> None:
         runner.run()
         return
 
-    with Experiment(
+    with SingleInputExperiment(
         config,
+        input_file=args.input_file,
         peptide_table=args.load_peptide_table,
         spectrum_file=args.load_spectrum_file,
     ) as exp:
@@ -241,8 +246,9 @@ def time_scoring() -> None:
     args, kw, logger = parse_args(p)
 
     config = Config(**kw)
-    with Experiment(
+    with SingleInputExperiment(
         config,
+        input_file=args.input_file,
         peptide_table=args.load_peptide_table,
         spectrum_file=args.load_spectrum_file,
     ) as exp:
