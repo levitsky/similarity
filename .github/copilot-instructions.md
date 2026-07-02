@@ -11,6 +11,13 @@
   - `similarity/grouping.py`: candidate pair generation via cKDTree and pair scoring via C extension.
   - `similarity/experiment.py`: fixture orchestration and resource cleanup.
   - `similarity/cli.py`: command-line wiring and subset runner behavior.
+ - Two experiment modes are supported: single input and dual input. Single input mode is used for scoring a single peptide table against itself,
+   while dual input mode is used for scoring two different peptide tables against each other.
+   Fixture classes must support both modes, assisted by `suffix` parameters.
+ - Subset processing is used to reduce memory footprint and improve parallelization performance.
+   Subset offsets are computed to ensure that each subset is processed independently,
+   while still producing a final result equivalent to a single-run processing of the entire dataset.
+   In dual input mode, the first peptide table is split into subsets, while the second peptide table is processed in full for each subset of the first.
 
 ## Non-negotiable correctness invariants
 - Subset processing must be equivalent to a full single-run result after concatenating all subsets.

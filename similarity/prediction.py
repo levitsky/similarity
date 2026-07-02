@@ -531,7 +531,8 @@ class MzIrtDataFrame(Fixture):
         sort_idx = np.argsort(mz_array)
         mz_array = mz_array[sort_idx]
 
-        if experiment.config.subsets > 1:
+        # if processing the first (or only) input, apply the offset logic
+        if self.is_first and experiment.config.subsets > 1:
             offsets = self.subset_offsets(experiment, mz_array)
             logger.debug(
                 "Configured %d subsets with offsets %s",
@@ -555,7 +556,7 @@ class MzIrtDataFrame(Fixture):
                 experiment.offsets[-3:],
             )
         else:
-            logger.info("Processing all %d precursors", nprecursors)
+            logger.info("Processing all %d precursors for %s", nprecursors, self)
             idx_start, idx_end = 0, nprecursors
 
         subset_size = idx_end - idx_start

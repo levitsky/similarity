@@ -77,6 +77,10 @@ class Fixture(ABC):
             return "_" + right
         return ""
 
+    @property
+    def is_first(self) -> bool:
+        return self.suffix in {"", "_1"}
+
     def __set_name__(self, owner, name):
         self.name = name
         self.suffix = self.get_suffix(name)

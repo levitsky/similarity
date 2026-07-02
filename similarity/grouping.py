@@ -104,7 +104,7 @@ class GroupingWorker(ExperimentWorker):
             return self.within_mz_tolerance_no_isotope
         return self.within_mz_tolerance_with_isotopes
 
-    def KDTree(self, batch: int, isotope: int) -> KDTree:
+    def kdtree(self, batch: int, isotope: int) -> KDTree:
         bsize = self.config.batch_size
         arr = self.mzrt[batch * bsize : (batch + 1) * bsize]
         if isotope:
@@ -177,7 +177,7 @@ class GroupingWorker(ExperimentWorker):
         neighbors = []
         subtrees = []
         for isotope2 in range(self.config.isotope_error + 1):
-            subtree = self.KDTree(batch, isotope2)
+            subtree = self.kdtree(batch, isotope2)
             subtrees.append(subtree)
 
         for tree in self.trees:
@@ -258,7 +258,7 @@ class SpectrumGrouping(Fixture):
     max_queue_size: int = 100000
     dtype = np.dtype([("i", np.int32), ("j", np.int32), ("score", np.float32)])
 
-    def KDTree(
+    def kdtree(
         self, experiment: "Experiment", factors: np.ndarray, isotope: int = 0
     ) -> KDTree:
         """Build a KDTree from the peptide DataFrame, applying the scaling factors to each dimension."""
@@ -309,7 +309,7 @@ class SpectrumGrouping(Fixture):
     def evaluate(self, experiment: "Experiment") -> np.ndarray:
         factors = self.scaling_factors(experiment)
         trees = [
-            self.KDTree(experiment, factors, isotope=i)
+            self.kdtree(experiment, factors, isotope=i)
             for i in range(experiment.config.isotope_error + 1)
         ]
         logger.info(
