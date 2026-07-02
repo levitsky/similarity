@@ -51,8 +51,9 @@ class SharedArraySpectrumCollection(SpectrumCollection):
             buffer=self.shared_memory.buf,
         )
         self.array.fill(np.nan)
-        if experiment.spectrum_file:
-            self.load_from_file(experiment.spectrum_file)
+        spectrum_file = getattr(experiment, "spectrum_file" + self.suffix)
+        if spectrum_file:
+            self.load_from_file(spectrum_file)
 
     def load_from_file(self, file: "str | Path") -> None:
         arr = np.load(file)
