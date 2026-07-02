@@ -1,13 +1,13 @@
-from typing import TYPE_CHECKING, Generic
+from typing import TYPE_CHECKING
 import logging
 import numpy as np
 from pandas import DataFrame
 from multiprocessing.shared_memory import SharedMemory
-from tqdm import tqdm
 from ..abc import SpectrumCollection
 
 if TYPE_CHECKING:
-    from ..abc import Index
+    from pathlib import Path
+    from ..cache.common import SpectrumCache
     from ...experiment import Experiment
     from numpy.typing import NDArray, DTypeLike
     import numpy as np
@@ -51,6 +51,38 @@ class SharedArraySpectrumCollection(SpectrumCollection):
             buffer=self.shared_memory.buf,
         )
         self.array.fill(np.nan)
+        if experiment.spectrum_file:
+            self.load_from_file(experiment.spectrum_file)
+
+    def load_from_file(self, file: "str | Path") -> None:
+        arr = np.load(file)
+        nspectra, narrays, maxpeaks = arr.shape
+        if narrays != 2:
+            raise ValueError(
+                f"Unsupported spectrum array file format. Expected shape {self.shape}, got {arr.shape}"
+            )
+        if maxpeaks > self.shape[2]:
+            raise NotImplementedError(
+                f"Saved array has {maxpeaks} peaks, but expected at most {self.shape[2]}. Reduction currently not implemented."
+            )
+        if maxpeaks < self.shape[2]:
+            raise ValueError(
+                f"Saved array has {maxpeaks} peaks, but expected at least {self.shape[2]}. Cannot load into larger array."
+            )
+        if nspectra < self.shape[0]:
+            raise ValueError(
+                f"Saved array has {nspectra} spectra, but expected at least {self.shape[0]}. Cannot load into larger array."
+            )
+        if nspectra > self.shape[0]:
+            if self.experiment.config.subsets == 1:
+                raise ValueError(
+                    f"Saved array has {nspectra} spectra, but expected at most {self.shape[0]}. Cannot load into smaller array."
+                )
+            logger.info("Loading a subset of the spectrum array from file %s", file)
+            self.array[:, :, :] = arr[self.offset : self.offset + self.shape[0], :, :]
+        else:
+            logger.info("Loading the full spectrum array from file %s", file)
+            self.array[:, :, :] = arr
 
     def __getitem__(
         self, key: int
@@ -76,7 +108,7 @@ class SharedArraySpectrumCollection(SpectrumCollection):
             buffer=self.shared_memory.buf,
         )
 
-    def fill_from_cache(self, experiment: "Experiment", index: "Index") -> None:
+    def fill_from_cache(self, experiment: "Experiment", index: "SpectrumCache") -> None:
         spectra = [[] for _ in range(len(experiment.peptides))]
         index.fill_from_cache(experiment.peptides, spectra)
         for i, cached in enumerate(spectra):
@@ -97,6 +129,11 @@ class SharedArraySpectrumCollection(SpectrumCollection):
             len_spectrum = len(mz)
             self.array[loc - self.offset, 0, :len_spectrum] = mz
             self.array[loc - self.offset, 1, :len_spectrum] = intensities
+
+    def save(self, file: "str | Path") -> None:
+        """Save the collection to a file."""
+        logger.info("Saving predicted spectra to %s...", file)
+        np.save(file, self.array)
 
     @property
     def spectra_available(self) -> "NDArray[np.bool_]":
