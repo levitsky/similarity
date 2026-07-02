@@ -41,6 +41,7 @@ class ExperimentRunner:
     def __init__(
         self,
         config: "Config",
+        input_file: str | Path,
         peptide_table: str | Path,
         jobs: int = 1,  # unsupported for now
         create_peptide_table: bool = True,
@@ -50,8 +51,9 @@ class ExperimentRunner:
         score_df_file: str | None = None,
     ):
         logger.debug(
-            "Initializing ExperimentRunner with config: %s, peptide_table: %s, jobs: %d, create_peptide_table: %s, spectrum_file: %s, create_spectrum_file: %s, array_file: %s, score_df_file: %s",
+            "Initializing ExperimentRunner with config: %s, input_file: %s, peptide_table: %s, jobs: %d, create_peptide_table: %s, spectrum_file: %s, create_spectrum_file: %s, array_file: %s, score_df_file: %s",
             config,
+            input_file,
             peptide_table,
             jobs,
             create_peptide_table,
@@ -61,6 +63,7 @@ class ExperimentRunner:
             score_df_file,
         )
         self.config = config
+        self.input_file = input_file
         # self.jobs = jobs
         self.create_peptide_table = create_peptide_table
         self.peptide_table = peptide_table
@@ -73,7 +76,9 @@ class ExperimentRunner:
         from ..experiment import SingleInputExperiment
 
         c = replace(self.config, subset=subset)
-        with SingleInputExperiment(c, self.peptide_table) as experiment:
+        with SingleInputExperiment(
+            c, self.input_file, self.peptide_table, self.spectrum_file
+        ) as experiment:
             logger.info(
                 "Running experiment %d for subset %d of %d",
                 id(experiment),
@@ -99,7 +104,9 @@ class ExperimentRunner:
         from ..experiment import SingleInputExperiment
 
         c = replace(self.config, subsets=1)
-        with SingleInputExperiment(c) as experiment:
+        with SingleInputExperiment(
+            c, self.input_file, self.peptide_table, self.spectrum_file
+        ) as experiment:
             if self.create_peptide_table:
                 logger.info(
                     "Creating full peptide table for the entire dataset at %s",
