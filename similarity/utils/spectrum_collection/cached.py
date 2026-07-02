@@ -20,7 +20,7 @@ class CachedSpectrumCollection(SpectrumCollection):
     index: "SpectrumCache"
     batch_factor: int = 10
 
-    def __init__(self, experiment: "Experiment", suffix: str):
+    def __init__(self, experiment: "Experiment", suffix: str = ""):
         super().__init__(experiment, suffix)
         index = experiment.cache[IndexType.INTENSITY]
         if index is None:

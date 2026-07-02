@@ -155,6 +155,7 @@ class MatchPeaksTest(unittest.TestCase):
                 }
             ),
             config=SimpleNamespace(max_peaks=3),
+            spectrum_file=None,
         )
         collection = SharedArraySpectrumCollection(experiment)
         spectra = {
@@ -166,7 +167,7 @@ class MatchPeaksTest(unittest.TestCase):
         index = FakeSpectrumIndex(spectra)
 
         try:
-            collection.fill_from_cache(experiment, index)
+            collection.fill_from_cache(index)
             mz, intensities = collection[0]
         finally:
             collection.close()

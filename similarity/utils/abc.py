@@ -6,6 +6,7 @@ from enum import Enum
 import numpy as np
 
 if TYPE_CHECKING:
+    from pathlib import Path
     from ..experiment import Experiment
     from .cache.common import SpectrumCache
     import pandas as pd
@@ -170,7 +171,7 @@ class Cache(ABC):
 class SpectrumCollection(ABC):
     """A container of spectra for use in grouping and scoring. Needs to support returning spectra by integer peptide index and support multiprocessing."""
 
-    def __init__(self, experiment: "Experiment", suffix: str):
+    def __init__(self, experiment: "Experiment", suffix: str = ""):
         self.experiment = experiment
         self.suffix = suffix
 
@@ -195,6 +196,13 @@ class SpectrumCollection(ABC):
     ) -> None:
         """Fill missing spectra from predictions."""
         pass
+
+    def save(self, file: "str | Path") -> None:
+        """Save the collection to a file."""
+        logger.error("%s does not support saving to file", self.__class__.__name__)
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support saving to file"
+        )
 
     @property
     @abstractmethod

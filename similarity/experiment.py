@@ -70,12 +70,14 @@ class SingleInputExperiment(Experiment):
         self,
         config: SingleInputConfig,
         peptide_table: "Path | str | None" = None,
+        spectrum_file: "Path | str | None" = None,
     ):
         super().__init__(config)
         self.peptide_table = peptide_table
+        self.spectrum_file = spectrum_file
 
     def __reduce__(self) -> tuple:
-        return self.__class__, (self.config, self.peptide_table)
+        return self.__class__, (self.config, self.peptide_table, self.spectrum_file)
 
     def _cleanup(self):
         super()._cleanup()
@@ -95,13 +97,23 @@ class DualInputExperiment(Experiment):
         config: DualInputConfig,
         peptide_table_1: "Path | str | None" = None,
         peptide_table_2: "Path | str | None" = None,
+        spectrum_file_1: "Path | str | None" = None,
+        spectrum_file_2: "Path | str | None" = None,
     ):
         super().__init__(config)
         self.peptide_table_1 = peptide_table_1
         self.peptide_table_2 = peptide_table_2
+        self.spectrum_file_1 = spectrum_file_1
+        self.spectrum_file_2 = spectrum_file_2
 
     def __reduce__(self) -> tuple:
-        return self.__class__, (self.config, self.peptide_table_1, self.peptide_table_2)
+        return self.__class__, (
+            self.config,
+            self.peptide_table_1,
+            self.peptide_table_2,
+            self.spectrum_file_1,
+            self.spectrum_file_2,
+        )
 
     def _cleanup(self):
         super()._cleanup()
