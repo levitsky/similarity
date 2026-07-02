@@ -24,7 +24,7 @@ class ExperimentWorker(ABC, mp.Process):
         return super().run()
 
 
-class ExperimentRunner:
+class SingleInputExperimentRunner:
     """
     A class responsible for running an experiment with subsets.
     When `run` is called, it will create an Experiment object for each subset and run them.
@@ -105,7 +105,10 @@ class ExperimentRunner:
 
         c = replace(self.config, subsets=1)
         with SingleInputExperiment(
-            c, self.input_file, self.peptide_table, self.spectrum_file
+            c,
+            input_file=self.input_file,
+            peptide_table=self.peptide_table if not self.create_peptide_table else None,
+            spectrum_file=self.spectrum_file if not self.create_spectrum_file else None,
         ) as experiment:
             if self.create_peptide_table:
                 logger.info(

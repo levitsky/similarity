@@ -1,6 +1,6 @@
 import math
 from typing import Iterable, TYPE_CHECKING
-from scipy.spatial import cKDTree
+from scipy.spatial import KDTree
 import numpy as np
 import logging
 import multiprocessing as mp
@@ -8,7 +8,6 @@ import itertools
 from .utils.abc import Fixture
 from .utils.utils import ExperimentWorker
 from .utils.config import PROTON_MASS, MzErrorUnit
-from .prediction import MzIrtDataFrame
 from ._match_peaks import match_peaks_sorted, similarity_score as c_similarity_score
 
 if TYPE_CHECKING:
@@ -25,7 +24,7 @@ class GroupingWorker(ExperimentWorker):
     """
 
     config: "Config"
-    trees: list[cKDTree]
+    trees: list[KDTree]
     radius: float
     shape: tuple[int, ...]
     nbatches: int
@@ -105,7 +104,7 @@ class GroupingWorker(ExperimentWorker):
             return self.within_mz_tolerance_no_isotope
         return self.within_mz_tolerance_with_isotopes
 
-    def kdtree(self, batch: int, isotope: int) -> cKDTree:
+    def KDTree(self, batch: int, isotope: int) -> KDTree:
         bsize = self.config.batch_size
         arr = self.mzrt[batch * bsize : (batch + 1) * bsize]
         if isotope:
@@ -115,7 +114,7 @@ class GroupingWorker(ExperimentWorker):
                 * PROTON_MASS
                 / self.charges[batch * bsize : (batch + 1) * bsize]
             )
-        return cKDTree(arr * self.scaling_factors)
+        return KDTree(arr * self.scaling_factors)
 
     def match_peaks(self, mz1: np.ndarray, mz2: np.ndarray):
         return match_peaks_sorted(mz1, mz2, self.atol, self.rtol)
@@ -178,7 +177,7 @@ class GroupingWorker(ExperimentWorker):
         neighbors = []
         subtrees = []
         for isotope2 in range(self.config.isotope_error + 1):
-            subtree = self.kdtree(batch, isotope2)
+            subtree = self.KDTree(batch, isotope2)
             subtrees.append(subtree)
 
         for tree in self.trees:
@@ -259,10 +258,10 @@ class SpectrumGrouping(Fixture):
     max_queue_size: int = 100000
     dtype = np.dtype([("i", np.int32), ("j", np.int32), ("score", np.float32)])
 
-    def kdtree(
+    def KDTree(
         self, experiment: "Experiment", factors: np.ndarray, isotope: int = 0
-    ) -> cKDTree:
-        """Build a cKDTree from the peptide DataFrame, applying the scaling factors to each dimension."""
+    ) -> KDTree:
+        """Build a KDTree from the peptide DataFrame, applying the scaling factors to each dimension."""
         df = experiment.peptides
         names = ["m/z", "irt"]
         if experiment.config.model_ccs is not None:
@@ -278,7 +277,7 @@ class SpectrumGrouping(Fixture):
         else:
             # avoid copying if no isotope error is applied
             values = df[names].values
-        return cKDTree(values * factors)
+        return KDTree(values * factors)
 
     def scaling_factors(self, experiment: "Experiment") -> np.ndarray:
         """Calculate scaling factors for each dimension based on the configured tolerances.
@@ -310,11 +309,11 @@ class SpectrumGrouping(Fixture):
     def evaluate(self, experiment: "Experiment") -> np.ndarray:
         factors = self.scaling_factors(experiment)
         trees = [
-            self.kdtree(experiment, factors, isotope=i)
+            self.KDTree(experiment, factors, isotope=i)
             for i in range(experiment.config.isotope_error + 1)
         ]
         logger.info(
-            "Built %d cKDTree(s) with %s nodes from %d points",
+            "Built %d KDTree(s) with %s nodes from %d points",
             len(trees),
             ", ".join(str(tree.size) for tree in trees),
             trees[0].n,

@@ -18,7 +18,7 @@ from similarity.utils.config import (
 )
 from similarity.utils.cache import CacheType
 from similarity.utils.spectrum_collection import SpectrumCollectionType
-from similarity.utils.utils import ExperimentRunner
+from similarity.utils.utils import SingleInputExperimentRunner as ExperimentRunner
 from pathlib import Path
 import logging
 
@@ -465,11 +465,12 @@ class ExperimentTest(TestBase):
 class SubsetTest(TestBase):
     test_file = "tests/10k_peptides.txt"
 
-    def setUp(self):
-        super().setUp()
-        with Experiment(self.config, input_file=self.test_file) as exp:
-            self.correct_scores = exp.score_array
-            self.correct_scores.sort()
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        with Experiment(cls.config, input_file=cls.test_file) as exp:
+            cls.correct_scores = exp.score_array
+            cls.correct_scores.sort()
 
     def test_experiment_runner(self):
         subsets = 3
