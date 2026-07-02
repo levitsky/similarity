@@ -38,8 +38,9 @@ class Fixture(ABC):
             return self
         if obj not in self._data:
             logger.info(
-                "Started evaluating %s for %s %d",
+                "Started evaluating %s%s for %s %d",
                 self.__class__.__name__,
+                self.suffix,
                 obj.__class__.__name__,
                 id(obj),
             )
@@ -48,8 +49,9 @@ class Fixture(ABC):
             end_time = datetime.now()
 
             logger.info(
-                "Finished evaluating %s for %s %d in %s",
+                "Finished evaluating %s%s for %s %d in %s",
                 self.__class__.__name__,
+                self.suffix,
                 obj.__class__.__name__,
                 id(obj),
                 end_time - start_time,
@@ -89,6 +91,9 @@ class Fixture(ABC):
 
     def exists(self, obj: "Experiment") -> bool:
         return obj in self._data
+
+    def __str__(self):
+        return f"{self.__class__.__name__}({self.name})"
 
 
 class IndexType(Enum):
@@ -232,3 +237,6 @@ class SpectrumCollection(ABC):
             intensities = intensities[idx]
         order = np.argsort(mz, kind="mergesort")
         return mz[order], intensities[order]
+
+    def __str__(self):
+        return f"{self.__class__.__name__}{self.suffix} for {self.experiment.__class__.__name__}({id(self.experiment)})"

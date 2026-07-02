@@ -40,8 +40,10 @@ redis = ["redis"]
 [project.urls]
 
 [project.scripts]
-run = "similarity.cli:experiment"
-time_scoring = "similarity.cli:time_scoring"
+run = "similarity.cli:single_input_experiment"
+run_single = "similarity.cli:single_input_experiment"
+run_dual = "similarity.cli:dual_input_experiment"
+time_scoring = "similarity.cli:time_scoring_single"
 
 [tool.setuptools]
 packages = ["similarity"]

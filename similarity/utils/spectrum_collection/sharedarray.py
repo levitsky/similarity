@@ -133,7 +133,7 @@ class SharedArraySpectrumCollection(SpectrumCollection):
 
     def save(self, file: "str | Path") -> None:
         """Save the collection to a file."""
-        logger.info("Saving predicted spectra to %s...", file)
+        logger.info("Saving %s to %s...", self, file)
         np.save(file, self.array)
 
     @property
