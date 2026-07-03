@@ -84,10 +84,11 @@ class Fixture(ABC):
     def __set_name__(self, owner, name):
         self.name = name
         self.suffix = self.get_suffix(name)
+        self.owner = owner
         logger.debug(
             "Setting name of fixture %s of %s %d to %s with suffix %s",
             self.__class__.__name__,
-            owner.__class__.__name__,
+            owner.__name__,
             id(owner),
             self.name,
             self.suffix,

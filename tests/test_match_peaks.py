@@ -95,7 +95,9 @@ class MatchPeaksTest(unittest.TestCase):
                 size=(mz1.size, mz2.size), unit=unit, tolerance=tolerance
             ):
                 config = Config(fragment_mz_unit=unit, fragment_mz_tolerance=tolerance)
-                g = GroupingWorker(None, None, config=config)
+                g = GroupingWorker(
+                    None, None, config=config, spectra_1=None, spectra_2=None
+                )
                 atol = tolerance if unit == MzErrorUnit.Th else 0.0
                 rtol = tolerance / 1e6 if unit == MzErrorUnit.PPM else 0.0
                 expected = dense_match_peaks(mz1, mz2, atol, rtol)
@@ -116,6 +118,8 @@ class MatchPeaksTest(unittest.TestCase):
                 config=Config(
                     fragment_mz_unit=MzErrorUnit.Th, fragment_mz_tolerance=0.02
                 ),
+                spectra_1=None,
+                spectra_2=None,
             )
             idx1, idx2 = g.match_peaks(mz1, mz2)
 

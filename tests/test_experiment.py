@@ -5,8 +5,11 @@ import pandas as pd
 import dataclasses
 import tempfile
 from collections import Counter
-from similarity.experiment import SingleInputExperiment as Experiment
-from similarity.grouping import GroupingWorker, SpectrumGrouping
+from similarity.experiment import (
+    SingleInputExperiment as Experiment,
+    DualInputExperiment,
+)
+from similarity.grouping import GroupingWorker
 from similarity.utils.config import (
     Config,
     KoinaIntensityModel,
@@ -97,6 +100,17 @@ class ExperimentTest(TestBase):
                 0.858346,
                 0.933183,
             ]
+        )
+
+    def test_dual_mode(self):
+        with DualInputExperiment(
+            self.config,
+            input_file_1="tests/test_peptides_1.txt",
+            input_file_2="tests/test_peptides_2.txt",
+        ) as exp:
+            scores = exp.score_array.copy()
+        self.assertTrue(
+            np.allclose(sorted(scores["score"]), self.correct_scores, atol=1e-3)
         )
 
     def test_load_peptide_table(self):
@@ -394,42 +408,8 @@ class ExperimentTest(TestBase):
             workers=1,
         )
 
-        class FakeSpectrumCollection:
-            def __getitem__(self, key):
-                mz = np.array([100.0, 200.0], dtype=np.float32)
-                intensities = np.array([1.0, 1.0], dtype=np.float32)
-                return mz, intensities
-
-            def worker_close(self):
-                pass
-
-            def close(self):
-                pass
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            peptide_file = Path(tmpdir) / "peptides.tsv"
-            sequence_file = Path(__file__).with_name("10k_peptides.txt")
-            sequences = np.unique(np.loadtxt(sequence_file, dtype=bytes))[:512]
-            peptide_table = pd.DataFrame(
-                {
-                    "peptide_sequences": sequences,
-                    "precursor_charges": np.full(sequences.shape[0], 2, dtype=np.uint8),
-                    "irt": np.zeros(sequences.shape[0], dtype=np.float32),
-                    "m/z": 500.0
-                    + np.arange(sequences.shape[0], dtype=np.float32) * 0.2,
-                }
-            )
-            peptide_table.to_csv(peptide_file, index=False, sep="\t")
-
-            with Experiment(config, peptide_table=peptide_file) as exp:
-                _ = exp.peptides
-                predicted = type(exp).__dict__["predicted_spectra"]
-                predicted._data[exp] = FakeSpectrumCollection()
-
-                try:
-                    scores = SpectrumGrouping().evaluate(exp)
-                finally:
-                    predicted._data.pop(exp, None)
+        with Experiment(config, input_file=self.test_file) as exp:
+            scores = exp.score_array.copy()
 
         pairs = np.stack((scores["i"], scores["j"]), axis=1)
         unique_pairs = np.unique(pairs, axis=0)

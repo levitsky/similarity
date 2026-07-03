@@ -18,6 +18,8 @@
    Subset offsets are computed to ensure that each subset is processed independently,
    while still producing a final result equivalent to a single-run processing of the entire dataset.
    In dual input mode, the first peptide table is split into subsets, while the second peptide table is processed in full for each subset of the first.
+ - During grouping, batches are processed in parallel. Neigbor indices and scores are fed back into the main process for final aggregation and output.
+   In dual input mode, batches are taken from the first peptide table, while the second peptide table is processed in full for each batch of the first.
 
 ## Non-negotiable correctness invariants
 - Subset processing must be equivalent to a full single-run result after concatenating all subsets.
@@ -40,6 +42,9 @@
   as the same peptide may appear in multiple isotopic forms.
 - In grouping, boundary inclusion must keep the first non-overlap index in scope.
 - `score_array` records are structured as `(i, j, score)` with consistent global peptide indices.
+- The scaling of "mzrt" arrays must be conservative enough to not exclude any matches. When scaling to relative m/z tolerance,
+  that means that the scaling factor must be based on the smallest m/z value. Then the KDTree search radius must be based on the largest m/z value.
+  This ensures that all potential matches are included in the search.
 
 ## Data and dtype conventions
 - Internal peptide sequences are bytes in runtime arrays/dataframes; decode to ASCII only for user-facing serialization.

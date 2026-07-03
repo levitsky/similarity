@@ -310,22 +310,23 @@ class MzIrtDataFrame(Fixture):
                 end_of_previous = ends[k - 1]
                 start = end_of_previous
 
-                while (
-                    values[end_of_previous] - values[start - 1]
-                    <= c.absolute_mz_error(values[end_of_previous])
-                    + c.isotope_error * PROTON_MASS / c.min_charge
-                ):
-                    start -= 1
-                    if (
-                        start <= previous_start
-                        or end_of_previous - start >= max_overlap
+                if not self.suffix:  # only apply overlap logic in single-input mode
+                    while (
+                        values[end_of_previous] - values[start - 1]
+                        <= c.absolute_mz_error(values[end_of_previous])
+                        + c.isotope_error * PROTON_MASS / c.min_charge
                     ):
-                        logger.error(
-                            "Subset size is too small to accommodate the %s tolerance. "
-                            "Please decrease the number of subsets.",
-                            dim,
-                        )
-                        raise ValueError("Subset size is too small")
+                        start -= 1
+                        if (
+                            start <= previous_start
+                            or end_of_previous - start >= max_overlap
+                        ):
+                            logger.error(
+                                "Subset size is too small to accommodate the %s tolerance. "
+                                "Please decrease the number of subsets.",
+                                dim,
+                            )
+                            raise ValueError("Subset size is too small")
             offsets.append((start, end))
             previous_start = start
 
