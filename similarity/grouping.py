@@ -335,6 +335,7 @@ class SpectrumGrouping(Fixture):
         With these factors, all tolerances will be scaled to the m/z tolerance."""
         peptides_1, peptides_2 = self.assign_inputs(experiment)
         min_mz = max(peptides_1["m/z"].iloc[0], peptides_2["m/z"].iloc[0])
+        min_mz -= experiment.config.absolute_mz_error(min_mz)
         mz_tol = experiment.config.absolute_mz_error(min_mz)
         irt_tol = experiment.config.irt_tolerance
         if experiment.config.model_ccs is not None:

@@ -226,7 +226,7 @@ class MzIrtDataFrame(Fixture):
         if df["peptide_sequences"].isna().any():
             raise ValueError("Column peptide_sequences contains missing values")
 
-        if experiment.config.subsets > 1:
+        if self.is_first and experiment.config.subsets > 1:
             logger.info(
                 "Subset processing mode. Assuming peptide table is sorted by m/z and contains the complete peptide set."
             )

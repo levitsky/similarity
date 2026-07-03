@@ -9,7 +9,7 @@ from similarity.experiment import (
     SingleInputExperiment as Experiment,
     DualInputExperiment,
 )
-from similarity.grouping import GroupingWorker
+from similarity.grouping import GroupingWorker, SpectrumGrouping
 from similarity.utils.config import (
     Config,
     KoinaIntensityModel,
@@ -112,6 +112,73 @@ class ExperimentTest(TestBase):
         self.assertTrue(
             np.allclose(sorted(scores["score"]), self.correct_scores, atol=1e-3)
         )
+
+    def test_dual_same_input_matches_single_with_symmetry_and_self_pairs(self):
+        with Experiment(self.config, input_file=self.test_file) as exp_single:
+            single_scores = exp_single.score_array.copy()
+            npeptides = len(exp_single.peptides)
+
+        with DualInputExperiment(
+            self.config,
+            input_file_1=self.test_file,
+            input_file_2=self.test_file,
+        ) as exp_dual:
+            dual_scores = exp_dual.score_array.copy()
+
+        single_pairs = {
+            (int(i), int(j)) for i, j in zip(single_scores["i"], single_scores["j"])
+        }
+        dual_pairs = {
+            (int(i), int(j)) for i, j in zip(dual_scores["i"], dual_scores["j"])
+        }
+
+        self.assertEqual(len(dual_scores), 2 * len(single_scores) + npeptides)
+
+        for i, j in single_pairs:
+            self.assertIn((i, j), dual_pairs)
+            self.assertIn((j, i), dual_pairs)
+
+        diag = dual_scores[dual_scores["i"] == dual_scores["j"]]
+        self.assertEqual(len(diag), npeptides)
+        self.assertTrue(np.allclose(diag["score"], 1.0, atol=1e-6))
+
+    def test_dual_subset_only_applies_to_first_loaded_peptide_table(self):
+        source_1 = pd.DataFrame(
+            {
+                "peptide_sequences": [f"PEPTIDE{i:02d}" for i in range(9)],
+                "precursor_charges": [2] * 9,
+                "irt": np.linspace(10.0, 18.0, 9),
+                "m/z": np.linspace(500.0, 508.0, 9),
+            }
+        )
+        source_2 = pd.DataFrame(
+            {
+                "peptide_sequences": [f"SEQUENCE{i:02d}" for i in range(9)],
+                "precursor_charges": [2] * 9,
+                "irt": np.linspace(20.0, 28.0, 9),
+                "m/z": np.linspace(700.0, 708.0, 9),
+            }
+        )
+        config = dataclasses.replace(self.config, subsets=3, subset=2)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            peptide_file_1 = Path(tmpdir) / "peptides_1.tsv"
+            peptide_file_2 = Path(tmpdir) / "peptides_2.tsv"
+            source_1.to_csv(peptide_file_1, index=False, sep="\t")
+            source_2.to_csv(peptide_file_2, index=False, sep="\t")
+
+            with DualInputExperiment(
+                config,
+                peptide_table_1=peptide_file_1,
+                peptide_table_2=peptide_file_2,
+            ) as exp:
+                peptides_1 = exp.peptides_1
+                peptides_2 = exp.peptides_2
+
+                self.assertEqual(len(peptides_1), len(source_1) // config.subsets)
+                self.assertEqual(len(peptides_2), len(source_2))
+                self.assertEqual(peptides_2.index[0], 0)
+                self.assertEqual(peptides_2.index[-1], len(source_2) - 1)
 
     def test_load_peptide_table(self):
         source = pd.DataFrame(
@@ -638,6 +705,28 @@ class ConfigToleranceTest(unittest.TestCase):
         self.assertTrue(config.within_mz_tolerance(999.99, 1000.0))
         self.assertTrue(config.within_mz_tolerance(1000.0, 999.99))
         self.assertFalse(config.within_mz_tolerance(499.9949, 500.0))
+
+    def test_scaling_factors_use_smallest_mz_for_ppm_mode(self):
+        config = Config(
+            precursor_mz_tolerance=10.0,
+            precursor_mz_unit=MzErrorUnit.PPM,
+            irt_tolerance=5.0,
+        )
+        experiment = type(
+            "FakeDualExperiment",
+            (),
+            {
+                "config": config,
+                "peptides_1": pd.DataFrame({"m/z": [100.0, 200.0], "irt": [0.0, 1.0]}),
+                "peptides_2": pd.DataFrame({"m/z": [500.0, 600.0], "irt": [0.0, 1.0]}),
+            },
+        )()
+
+        factors = SpectrumGrouping().scaling_factors(experiment)
+        expected_mz_tol = config.absolute_mz_error(100.0)
+        self.assertAlmostEqual(
+            float(factors[1]), expected_mz_tol / config.irt_tolerance
+        )
 
 
 class EquivalenceTest(TestBase):

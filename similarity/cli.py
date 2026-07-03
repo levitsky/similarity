@@ -28,57 +28,47 @@ def get_argparser(
         files.add_argument(
             f"-i{suffix.lstrip('-')}",
             f"--input-file{suffix}",
-            nargs="?",
             type=Path,
-            help=f"Path to input peptide list for {suffix}",
+            help=f"Path to input peptide list {suffix.strip('-')}",
         )
         peptides = files.add_mutually_exclusive_group()
         peptides.add_argument(
             f"-p{suffix.lstrip('-')}",
             f"--peptide-file{suffix}",
-            nargs="?",
             type=Path,
-            help="Path to save the peptide table",
+            help=f"Path to save the peptide table {suffix.strip('-')}",
         )
         peptides.add_argument(
             f"-lp{suffix.lstrip('-')}",
             f"--load-peptide-table{suffix}",
-            nargs="?",
             type=Path,
-            help="Load an existing peptide table",
+            help=f"Load an existing peptide table {suffix.strip('-')}",
         )
         spectra = files.add_mutually_exclusive_group()
         spectra.add_argument(
             f"-s{suffix.lstrip('-')}",
             f"--spectrum-file{suffix}",
-            nargs="?",
             type=Path,
-            help="Path to save the predicted spectra as a .npy file",
+            help=f"Path to save the predicted spectra {suffix.strip('-')} as a .npy file",
         )
         spectra.add_argument(
             f"-ls{suffix.lstrip('-')}",
             f"--load-spectrum-file{suffix}",
-            nargs="?",
             type=Path,
-            help="Load an existing predicted spectra .npy file",
+            help=f"Load an existing predicted spectra {suffix.strip('-')} .npy file",
         )
     files.add_argument(
         "-a",
         "--array-file",
-        nargs="?",
         type=Path,
         help="Path to output .npy file with raw score arrays",
     )
-    files.add_argument(
-        "-o", "--output-file", nargs="?", type=Path, help="Path to output TSV file"
-    )
+    files.add_argument("-o", "--output-file", type=Path, help="Path to output TSV file")
     logsettings = parser.add_argument_group("Logging settings")
     logsettings.add_argument(
         "--verbose", action="store_true", help="Enable verbose logging"
     )
-    logsettings.add_argument(
-        "-l", "--log-file", nargs="?", type=Path, help="Path to log file"
-    )
+    logsettings.add_argument("-l", "--log-file", type=Path, help="Path to log file")
     return config_cls.argparser(parser)
 
 
@@ -245,9 +235,8 @@ def dual_input_experiment() -> None:
                 )
 
         for suffix in suffixes:
-            for suffix in suffixes:
-                if spec_file := getattr(args, f"spectrum_file{suffix}"):
-                    getattr(exp, f"predicted_spectra{suffix}").save(spec_file)
+            if spec_file := getattr(args, f"spectrum_file{suffix}"):
+                getattr(exp, f"predicted_spectra{suffix}").save(spec_file)
 
         if args.array_file:
             np.save(args.array_file, exp.score_array)
