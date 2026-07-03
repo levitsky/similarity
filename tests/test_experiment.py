@@ -706,7 +706,7 @@ class ConfigToleranceTest(unittest.TestCase):
         self.assertTrue(config.within_mz_tolerance(1000.0, 999.99))
         self.assertFalse(config.within_mz_tolerance(499.9949, 500.0))
 
-    def test_scaling_factors_use_smallest_mz_for_ppm_mode(self):
+    def test_scaling_factors_use_larger_min_mz_for_ppm_mode(self):
         config = Config(
             precursor_mz_tolerance=10.0,
             precursor_mz_unit=MzErrorUnit.PPM,
@@ -722,8 +722,8 @@ class ConfigToleranceTest(unittest.TestCase):
             },
         )()
 
-        factors = SpectrumGrouping().scaling_factors(experiment)
-        expected_mz_tol = config.absolute_mz_error(100.0)
+        factors = SpectrumGrouping().scaling_factors(experiment)  # type: ignore
+        expected_mz_tol = config.absolute_mz_error(500.0)
         self.assertAlmostEqual(
             float(factors[1]), expected_mz_tol / config.irt_tolerance
         )
