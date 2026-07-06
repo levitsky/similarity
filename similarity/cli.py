@@ -228,7 +228,7 @@ def dual_input_experiment() -> None:
     ) as exp:
         for suffix in suffixes:
             if pep_file := getattr(args, f"peptide_file{suffix}"):
-                df = getattr(exp, f"peptides{suffix}")
+                df = pd.DataFrame(getattr(exp, f"peptides{suffix}"))
                 df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
                 df.to_csv(pep_file, index=False, sep="\t")
                 logger.info(
