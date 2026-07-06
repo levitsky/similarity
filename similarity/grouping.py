@@ -301,11 +301,11 @@ class SpectrumGrouping(Fixture):
         self, experiment: "Experiment"
     ) -> tuple["pd.DataFrame", "pd.DataFrame"]:
         if hasattr(experiment, "peptides_1"):
-            logger.info("Performing grouping in dual input mode")
+            logger.debug("Performing grouping in dual input mode")
             e = cast("DualInputExperiment", experiment)
             return e.peptides_1, e.peptides_2
         else:
-            logger.info("Performing grouping in single input mode")
+            logger.debug("Performing grouping in single input mode")
             e = cast("SingleInputExperiment", experiment)
             return e.peptides, e.peptides
 

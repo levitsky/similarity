@@ -199,7 +199,10 @@ class MzIrtDataFrame(Fixture):
         else:
             size = np.prod(shape, dtype=int) * np.dtype(dtype).itemsize
             logger.info(
-                "Allocating %.2f MB of shared memory for %s", size / 2**20, name
+                "Allocating %.2f MB of shared memory for %s with dtype %s",
+                size / 2**20,
+                name,
+                dtype,
             )
             shm = SharedMemory(
                 name=f"{name}{self.suffix}-{id(experiment)}",
@@ -645,6 +648,16 @@ class MzIrtDataFrame(Fixture):
             )
             peptide_data["ccs"] = mzrt[:, 2]
 
+        logger.debug("Creating peptide DataFrame%s with columns:", self.suffix)
+        for col, values in peptide_data.items():
+            logger.debug(
+                "  %s: dtype=%s, shape=%s, samples=%s ... %s",
+                col,
+                values.dtype,
+                values.shape,
+                values[:5],
+                values[-5:],
+            )
         df = pd.DataFrame(
             peptide_data,
             copy=False,

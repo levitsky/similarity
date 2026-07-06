@@ -4,6 +4,7 @@ from .utils.utils import SingleInputExperimentRunner
 from .experiment import SingleInputExperiment, DualInputExperiment
 from pathlib import Path
 import numpy as np
+import pandas as pd
 import logging
 from enum import EnumType
 from types import UnionType
@@ -192,7 +193,7 @@ def single_input_experiment() -> None:
         spectrum_file=args.load_spectrum_file,
     ) as exp:
         if args.peptide_file:
-            df = exp.peptides
+            df = pd.DataFrame(exp.peptides)
             df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
             df.to_csv(args.peptide_file, index=False, sep="\t")
             logger.info("Saved peptide table to %s", args.peptide_file)
@@ -259,7 +260,7 @@ def time_scoring_single() -> None:
         spectrum_file=args.load_spectrum_file,
     ) as exp:
         if args.peptide_file:
-            df = exp.peptides
+            df = pd.DataFrame(exp.peptides)
             df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
             df.to_csv(args.peptide_file, index=False, sep="\t")
             logger.info("Saved peptide table to %s", args.peptide_file)
