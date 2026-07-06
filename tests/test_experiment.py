@@ -519,6 +519,11 @@ class SubsetTest(TestBase):
             cls.correct_scores = exp.score_array
             cls.correct_scores.sort()
 
+    def _assert_unique_pairs(self, scores):
+        pairs = np.stack((scores["i"], scores["j"]), axis=1)
+        unique_pairs = np.unique(pairs, axis=0)
+        self.assertEqual(len(scores), len(unique_pairs))
+
     def test_experiment_runner(self):
         subsets = 3
         config = dataclasses.replace(self.config, subsets=subsets)
@@ -588,6 +593,42 @@ class SubsetTest(TestBase):
         self.assertTrue((combined["j"] == self.correct_scores["j"]).all())
         self.assertTrue(
             np.allclose(combined["score"], self.correct_scores["score"], atol=1e-3)
+        )
+
+    def test_dual_subsets_self_search_match_full_without_duplicates(self):
+        subsets = 3
+        config = dataclasses.replace(self.config, batch_size=256, workers=1)
+
+        with DualInputExperiment(
+            config,
+            input_file_1=self.test_file,
+            input_file_2=self.test_file,
+        ) as exp_full:
+            full_scores = exp_full.score_array.copy()
+
+        subset_scores = []
+        for subset in range(1, subsets + 1):
+            subset_config = dataclasses.replace(config, subsets=subsets, subset=subset)
+            with DualInputExperiment(
+                subset_config,
+                input_file_1=self.test_file,
+                input_file_2=self.test_file,
+            ) as exp_subset:
+                subset_scores.append(exp_subset.score_array.copy())
+
+        combined_scores = np.concat(subset_scores)
+
+        self._assert_unique_pairs(full_scores)
+        self._assert_unique_pairs(combined_scores)
+
+        full_sorted = np.sort(full_scores, order=["i", "j"])
+        combined_sorted = np.sort(combined_scores, order=["i", "j"])
+
+        self.assertEqual(combined_sorted.shape[0], full_sorted.shape[0])
+        self.assertTrue(np.array_equal(combined_sorted["i"], full_sorted["i"]))
+        self.assertTrue(np.array_equal(combined_sorted["j"], full_sorted["j"]))
+        self.assertTrue(
+            np.allclose(combined_sorted["score"], full_sorted["score"], atol=5e-5)
         )
 
 

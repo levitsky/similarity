@@ -372,10 +372,11 @@ class SpectrumGrouping(Fixture):
             ", ".join(str(tree.size) for tree in trees),
             trees[0].n,
         )
-        nb = self.nbatches(experiment)
-        logger.info("Processing %d spectra in %d batches...", trees[0].n, nb)
 
         peptides_1, peptides_2 = self.assign_inputs(experiment)
+        nb = self.nbatches(experiment)
+        logger.info("Processing %d spectra in %d batches...", len(peptides_1), nb)
+
         # add global offset to account for the entire peptide dataframe being a subset
         global_offset = peptides_1.index[0]
         if experiment.config.subset > 1:
@@ -386,6 +387,7 @@ class SpectrumGrouping(Fixture):
         else:
             previous_end = 0
         if peptides_1 is peptides_2:
+            dual_mode = False
             exp = cast("SingleInputExperiment", experiment)
             logger.debug("Grouping in single input mode.")
             shared_memory_1 = shared_memory_2 = exp.__class__.peptides._shared_memory[
@@ -398,6 +400,7 @@ class SpectrumGrouping(Fixture):
             seq_dtype_1 = seq_dtype_2 = peptides_1["peptide_sequences"].dtype
             spectra_1 = spectra_2 = exp.predicted_spectra
         else:
+            dual_mode = True
             exp = cast("DualInputExperiment", experiment)
             logger.debug("Grouping in dual input mode.")
             shared_memory_1 = exp.__class__.peptides_1._shared_memory[exp]
@@ -465,7 +468,11 @@ class SpectrumGrouping(Fixture):
                         i, matches, scores = GroupingWorker.decode_result(item)
                         count += 1
                         for m, s in zip(matches, scores):
-                            yield (i + global_offset, m + global_offset, s)
+                            yield (
+                                i + global_offset,
+                                m + (global_offset if not dual_mode else 0),
+                                s,
+                            )
                         if count % experiment.config.batch_size == 0:
                             logger.debug("Processed %d peptides...", count)
 
@@ -505,7 +512,11 @@ class SpectrumGrouping(Fixture):
                     for item in pseudoworker.process_batch(batch):
                         i, matches, scores = item
                         for m, s in zip(matches, scores):
-                            yield (i + global_offset, m + global_offset, s)
+                            yield (
+                                i + global_offset,
+                                m + (global_offset if not dual_mode else 0),
+                                s,
+                            )
 
             scores = np.fromiter(produce_results(), dtype=self.dtype)
         logger.info(
