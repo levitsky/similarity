@@ -5,9 +5,11 @@ import pandas as pd
 import dataclasses
 import tempfile
 from collections import Counter
-from similarity.experiment import Experiment
+from similarity.experiment import (
+    SingleInputExperiment as Experiment,
+    DualInputExperiment,
+)
 from similarity.grouping import GroupingWorker, SpectrumGrouping
-from similarity.prediction import MzIrtDataFrame
 from similarity.utils.config import (
     Config,
     KoinaIntensityModel,
@@ -19,7 +21,7 @@ from similarity.utils.config import (
 )
 from similarity.utils.cache import CacheType
 from similarity.utils.spectrum_collection import SpectrumCollectionType
-from similarity.utils.utils import ExperimentRunner
+from similarity.utils.utils import SingleInputExperimentRunner as ExperimentRunner
 from pathlib import Path
 import logging
 
@@ -66,12 +68,12 @@ class TestBase(unittest.TestCase):
     mz_tolerance = 1.0
     mz_unit = MzErrorUnit.Th
 
-    def setUp(self):
-        self.config = Config(
-            input_file=Path(self.test_file),
-            batch_size=self.batch_size,
-            precursor_mz_tolerance=self.mz_tolerance,
-            precursor_mz_unit=self.mz_unit,
+    @classmethod
+    def setUpClass(cls):
+        cls.config = Config(
+            batch_size=cls.batch_size,
+            precursor_mz_tolerance=cls.mz_tolerance,
+            precursor_mz_unit=cls.mz_unit,
             model_intensity=KoinaIntensityModel.Prosit_2020_intensity_HCD,
             model_irt=KoinaRTModel.Prosit_2019_irt,
         )
@@ -80,7 +82,7 @@ class TestBase(unittest.TestCase):
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             force=True,  # overrides any existing logging config
         )
-        self.logger = logging.getLogger(__name__)
+        cls.logger = logging.getLogger(__name__)
 
 
 class ExperimentTest(TestBase):
@@ -100,6 +102,84 @@ class ExperimentTest(TestBase):
             ]
         )
 
+    def test_dual_mode(self):
+        with DualInputExperiment(
+            self.config,
+            input_file_1="tests/test_peptides_1.txt",
+            input_file_2="tests/test_peptides_2.txt",
+        ) as exp:
+            scores = exp.score_array.copy()
+        self.assertTrue(
+            np.allclose(sorted(scores["score"]), self.correct_scores, atol=1e-3)
+        )
+
+    def test_dual_same_input_matches_single_with_symmetry_and_self_pairs(self):
+        with Experiment(self.config, input_file=self.test_file) as exp_single:
+            single_scores = exp_single.score_array.copy()
+            npeptides = len(exp_single.peptides)
+
+        with DualInputExperiment(
+            self.config,
+            input_file_1=self.test_file,
+            input_file_2=self.test_file,
+        ) as exp_dual:
+            dual_scores = exp_dual.score_array.copy()
+
+        single_pairs = {
+            (int(i), int(j)) for i, j in zip(single_scores["i"], single_scores["j"])
+        }
+        dual_pairs = {
+            (int(i), int(j)) for i, j in zip(dual_scores["i"], dual_scores["j"])
+        }
+
+        self.assertEqual(len(dual_scores), 2 * len(single_scores) + npeptides)
+
+        for i, j in single_pairs:
+            self.assertIn((i, j), dual_pairs)
+            self.assertIn((j, i), dual_pairs)
+
+        diag = dual_scores[dual_scores["i"] == dual_scores["j"]]
+        self.assertEqual(len(diag), npeptides)
+        self.assertTrue(np.allclose(diag["score"], 1.0, atol=1e-6))
+
+    def test_dual_subset_only_applies_to_first_loaded_peptide_table(self):
+        source_1 = pd.DataFrame(
+            {
+                "peptide_sequences": [f"PEPTIDE{i:02d}" for i in range(9)],
+                "precursor_charges": [2] * 9,
+                "irt": np.linspace(10.0, 18.0, 9),
+                "m/z": np.linspace(500.0, 508.0, 9),
+            }
+        )
+        source_2 = pd.DataFrame(
+            {
+                "peptide_sequences": [f"SEQUENCE{i:02d}" for i in range(9)],
+                "precursor_charges": [2] * 9,
+                "irt": np.linspace(20.0, 28.0, 9),
+                "m/z": np.linspace(700.0, 708.0, 9),
+            }
+        )
+        config = dataclasses.replace(self.config, subsets=3, subset=2)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            peptide_file_1 = Path(tmpdir) / "peptides_1.tsv"
+            peptide_file_2 = Path(tmpdir) / "peptides_2.tsv"
+            source_1.to_csv(peptide_file_1, index=False, sep="\t")
+            source_2.to_csv(peptide_file_2, index=False, sep="\t")
+
+            with DualInputExperiment(
+                config,
+                peptide_table_1=peptide_file_1,
+                peptide_table_2=peptide_file_2,
+            ) as exp:
+                peptides_1 = exp.peptides_1
+                peptides_2 = exp.peptides_2
+
+                self.assertEqual(len(peptides_1), len(source_1) // config.subsets)
+                self.assertEqual(len(peptides_2), len(source_2))
+                self.assertEqual(peptides_2.index[0], 0)
+                self.assertEqual(peptides_2.index[-1], len(source_2) - 1)
+
     def test_load_peptide_table(self):
         source = pd.DataFrame(
             {
@@ -114,8 +194,8 @@ class ExperimentTest(TestBase):
         with tempfile.TemporaryDirectory() as tmpdir:
             peptide_file = Path(tmpdir) / "peptides.tsv"
             source.to_csv(peptide_file, index=False, sep="\t")
-            with Experiment(self.config) as exp:
-                loaded = MzIrtDataFrame().load_peptide_table(peptide_file, exp)
+            with Experiment(input_file=self.test_file, config=self.config) as exp:
+                loaded = Experiment.peptides.load_peptide_table(peptide_file, exp)
                 self.assertEqual(list(loaded.columns), list(source.columns))
 
                 seq = loaded["peptide_sequences"].to_numpy(copy=False)
@@ -137,7 +217,7 @@ class ExperimentTest(TestBase):
                     np.allclose(loaded["m/z"].to_numpy(copy=False), source["m/z"])
                 )
 
-                shm = MzIrtDataFrame._shared_memory[exp]
+                shm = Experiment.peptides._shared_memory[exp]
                 shm_seq = np.ndarray(
                     shape=(2,), dtype=seq.dtype, buffer=shm["peptide_sequences"].buf
                 )
@@ -176,8 +256,8 @@ class ExperimentTest(TestBase):
         with tempfile.TemporaryDirectory() as tmpdir:
             peptide_file = Path(tmpdir) / "peptides_ccs.tsv"
             source.to_csv(peptide_file, index=False, sep="\t")
-            with Experiment(config) as exp:
-                loaded = MzIrtDataFrame().load_peptide_table(peptide_file, exp)
+            with Experiment(config, input_file=self.test_file) as exp:
+                loaded = Experiment.peptides.load_peptide_table(peptide_file, exp)
                 self.assertTrue(
                     np.allclose(loaded["ccs"].to_numpy(copy=False), source["ccs"])
                 )
@@ -213,7 +293,7 @@ class ExperimentTest(TestBase):
                             cache=cache_type,
                             spectrum_collection=spectrum_collection_type,
                         )
-                        with Experiment(config) as exp:
+                        with Experiment(config, input_file=self.test_file) as exp:
                             result = exp.score_df.sort_values(["score"])
                             self.logger.debug("Final result:\n%s", result)
                             self.assertEqual(
@@ -231,7 +311,7 @@ class ExperimentTest(TestBase):
         """Test that the peptide table can be saved and loaded correctly."""
         with tempfile.TemporaryDirectory() as tmpdir:
             peptide_file = Path(tmpdir) / "peptides.tsv"
-            with Experiment(self.config) as exp:
+            with Experiment(self.config, input_file=self.test_file) as exp:
                 df = exp.peptides
                 df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
                 df.to_csv(peptide_file, index=False, sep="\t")
@@ -275,11 +355,13 @@ class ExperimentTest(TestBase):
             spectra_file = Path(tmpdir) / "spectra.npy"
             self.assertFalse(spectra_file.exists())
 
-            with Experiment(self.config) as exp:
+            with Experiment(self.config, input_file=self.test_file) as exp:
                 scores_saved = exp.score_array.copy()
                 exp.predicted_spectra.save(spectra_file)
 
-            with Experiment(self.config, spectrum_file=spectra_file) as exp:
+            with Experiment(
+                self.config, input_file=self.test_file, spectrum_file=spectra_file
+            ) as exp:
                 self.assertTrue(exp.predicted_spectra.spectra_available.all())
                 loaded_scores = exp.score_array.copy()
 
@@ -288,35 +370,40 @@ class ExperimentTest(TestBase):
     def test_subset_scores_match_with_loaded_full_spectra(self):
         subsets = 3
         subset = 2
-        config_10k = dataclasses.replace(
-            self.config, input_file=Path("tests/10k_peptides.txt")
-        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             spectra_file = Path(tmpdir) / "spectra.npy"
             self.assertFalse(spectra_file.exists())
 
-            with Experiment(config_10k) as exp_full:
+            with Experiment(
+                self.config, input_file=Path("tests/10k_peptides.txt")
+            ) as exp_full:
                 _ = exp_full.score_array
                 exp_full.predicted_spectra.save(spectra_file)
 
             subset_config = dataclasses.replace(
-                config_10k, subsets=subsets, subset=subset
+                self.config, subsets=subsets, subset=subset
             )
-            with Experiment(subset_config) as exp_subset:
+            with Experiment(
+                subset_config, input_file=Path("tests/10k_peptides.txt")
+            ) as exp_subset:
                 subset_scores = exp_subset.score_array.copy()
 
             with Experiment(
-                subset_config, spectrum_file=spectra_file
+                subset_config,
+                input_file=Path("tests/10k_peptides.txt"),
+                spectrum_file=spectra_file,
             ) as exp_subset_loaded:
-                self.assertTrue(exp_subset_loaded.predicted_spectra.spectra_available.all())
+                self.assertTrue(
+                    exp_subset_loaded.predicted_spectra.spectra_available.all()
+                )
                 subset_scores_loaded = exp_subset_loaded.score_array.copy()
 
             self._assert_score_arrays_equal(subset_scores_loaded, subset_scores)
 
     def test_multiple_charges(self):
         config = dataclasses.replace(self.config, max_charge=3)
-        with Experiment(config) as exp:
+        with Experiment(config, input_file=self.test_file) as exp:
             self.assertEqual(exp.peptides["precursor_charges"].max(), 3)
             self.assertEqual(exp.peptides.shape[0], 56)
             self.assertEqual(exp.score_df.shape[0], 18)
@@ -327,7 +414,7 @@ class ExperimentTest(TestBase):
         input_peptides = input_peptides[
             [len(s) < self.config.max_length for s in input_peptides]
         ]
-        with Experiment(config) as exp:
+        with Experiment(config, input_file=self.test_file) as exp:
             peptides = exp.peptides[["peptide_sequences", "precursor_charges", "m/z"]]
 
             self.assertEqual(peptides.shape[0], 2 * input_peptides.shape[0])
@@ -357,8 +444,8 @@ class ExperimentTest(TestBase):
             max_charge=2,
             variable_mods=["UNIMOD:35|Position:M"],
         )
-        with Experiment(config) as exp:
-            fixture = MzIrtDataFrame()
+        with Experiment(config, input_file=self.test_file) as exp:
+            fixture = Experiment.peptides
             sequences = fixture.generate_sequences(exp)
             mz_values = fixture.mz_array(exp, sequences)
 
@@ -388,42 +475,8 @@ class ExperimentTest(TestBase):
             workers=1,
         )
 
-        class FakeSpectrumCollection:
-            def __getitem__(self, key):
-                mz = np.array([100.0, 200.0], dtype=np.float32)
-                intensities = np.array([1.0, 1.0], dtype=np.float32)
-                return mz, intensities
-
-            def worker_close(self):
-                pass
-
-            def close(self):
-                pass
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            peptide_file = Path(tmpdir) / "peptides.tsv"
-            sequence_file = Path(__file__).with_name("10k_peptides.txt")
-            sequences = np.unique(np.loadtxt(sequence_file, dtype=bytes))[:512]
-            peptide_table = pd.DataFrame(
-                {
-                    "peptide_sequences": sequences,
-                    "precursor_charges": np.full(sequences.shape[0], 2, dtype=np.uint8),
-                    "irt": np.zeros(sequences.shape[0], dtype=np.float32),
-                    "m/z": 500.0
-                    + np.arange(sequences.shape[0], dtype=np.float32) * 0.2,
-                }
-            )
-            peptide_table.to_csv(peptide_file, index=False, sep="\t")
-
-            with Experiment(config, peptide_table=peptide_file) as exp:
-                _ = exp.peptides
-                predicted = type(exp).__dict__["predicted_spectra"]
-                predicted._data[exp] = FakeSpectrumCollection()
-
-                try:
-                    scores = SpectrumGrouping().evaluate(exp)
-                finally:
-                    predicted._data.pop(exp, None)
+        with Experiment(config, input_file=self.test_file) as exp:
+            scores = exp.score_array.copy()
 
         pairs = np.stack((scores["i"], scores["j"]), axis=1)
         unique_pairs = np.unique(pairs, axis=0)
@@ -433,12 +486,11 @@ class ExperimentTest(TestBase):
         """Test that Experiment can handle peptides with PTMs."""
         config = Config(
             ptms=True,
-            input_file=Path("tests/test_peptides_ptms.txt"),
             model_irt=KoinaRTModel.Prosit_2025_irt_40PTM,
             model_intensity=KoinaIntensityModel.Prosit_2025_intensity_40PTM,
             fragmentation_type=FragmentationType.HCD,
         )
-        with Experiment(config) as exp:
+        with Experiment(config, input_file=Path("tests/test_peptides_ptms.txt")) as exp:
             self.assertTrue(
                 np.allclose(sorted(exp.peptides["irt"]), [2.694990, 115.689156])
             )
@@ -453,24 +505,31 @@ class ExperimentTest(TestBase):
             self.config,
             model_ccs=KoinaCCSModel.IM2Deep,
         )
-        with Experiment(config) as exp:
+        with Experiment(config, input_file=self.test_file) as exp:
             self.assertEqual(exp.peptides["ccs"].isna().sum(), 0)
 
 
 class SubsetTest(TestBase):
     test_file = "tests/10k_peptides.txt"
 
-    def setUp(self):
-        super().setUp()
-        with Experiment(self.config) as exp:
-            self.correct_scores = exp.score_array
-            self.correct_scores.sort()
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        with Experiment(cls.config, input_file=cls.test_file) as exp:
+            cls.correct_scores = exp.score_array
+            cls.correct_scores.sort()
+
+    def _assert_unique_pairs(self, scores):
+        pairs = np.stack((scores["i"], scores["j"]), axis=1)
+        unique_pairs = np.unique(pairs, axis=0)
+        self.assertEqual(len(scores), len(unique_pairs))
 
     def test_experiment_runner(self):
         subsets = 3
         config = dataclasses.replace(self.config, subsets=subsets)
         runner = ExperimentRunner(
             config=config,
+            input_file=self.test_file,
             peptide_table="tests/peptides_subset.tsv",
             create_peptide_table=True,
             array_file="tests/scores_subset_{}.npy",
@@ -480,7 +539,8 @@ class SubsetTest(TestBase):
         combined = []
         for i in range(subsets):
             with Experiment(
-                dataclasses.replace(self.config, subset=i + 1, subsets=subsets)
+                dataclasses.replace(self.config, subset=i + 1, subsets=subsets),
+                input_file=self.test_file,
             ) as exp:
                 combined.append(exp.score_array)
         combined = np.concat(combined)
@@ -497,7 +557,8 @@ class SubsetTest(TestBase):
         outs = []
         for i in range(subsets):
             with Experiment(
-                dataclasses.replace(self.config, subset=i + 1, subsets=subsets)
+                input_file=self.test_file,
+                config=dataclasses.replace(self.config, subset=i + 1, subsets=subsets),
             ) as exp:
                 outs.append(exp.score_array)
         combined = np.concat(outs)
@@ -514,13 +575,14 @@ class SubsetTest(TestBase):
         outs = []
         with tempfile.TemporaryDirectory() as tmpdir:
             peptide_file = Path(tmpdir) / "peptides.tsv"
-            with Experiment(self.config) as exp:
+            with Experiment(self.config, input_file=self.test_file) as exp:
                 df = exp.peptides
                 df["peptide_sequences"] = df["peptide_sequences"].str.decode("ascii")
                 df.to_csv(peptide_file, index=False, sep="\t")
                 for i in range(subsets):
                     with Experiment(
                         dataclasses.replace(self.config, subset=i + 1, subsets=subsets),
+                        input_file=self.test_file,
                         peptide_table=peptide_file,
                     ) as exp_subset:
                         outs.append(exp_subset.score_array)
@@ -533,25 +595,66 @@ class SubsetTest(TestBase):
             np.allclose(combined["score"], self.correct_scores["score"], atol=1e-3)
         )
 
+    def test_dual_subsets_self_search_match_full_without_duplicates(self):
+        subsets = 3
+        config = dataclasses.replace(self.config, batch_size=256, workers=1)
+
+        with DualInputExperiment(
+            config,
+            input_file_1=self.test_file,
+            input_file_2=self.test_file,
+        ) as exp_full:
+            full_scores = exp_full.score_array.copy()
+
+        subset_scores = []
+        for subset in range(1, subsets + 1):
+            subset_config = dataclasses.replace(config, subsets=subsets, subset=subset)
+            with DualInputExperiment(
+                subset_config,
+                input_file_1=self.test_file,
+                input_file_2=self.test_file,
+            ) as exp_subset:
+                subset_scores.append(exp_subset.score_array.copy())
+
+        combined_scores = np.concat(subset_scores)
+
+        self._assert_unique_pairs(full_scores)
+        self._assert_unique_pairs(combined_scores)
+
+        full_sorted = np.sort(full_scores, order=["i", "j"])
+        combined_sorted = np.sort(combined_scores, order=["i", "j"])
+
+        self.assertEqual(combined_sorted.shape[0], full_sorted.shape[0])
+        self.assertTrue(np.array_equal(combined_sorted["i"], full_sorted["i"]))
+        self.assertTrue(np.array_equal(combined_sorted["j"], full_sorted["j"]))
+        self.assertTrue(
+            np.allclose(combined_sorted["score"], full_sorted["score"], atol=5e-5)
+        )
+
 
 class IsotopeErrorTest(TestBase):
     test_file = "tests/10k_peptides.txt"
     batch_size = 256
     mz_tolerance = 0.02
 
-    def setUp(self):
-        super().setUp()
-        with Experiment(dataclasses.replace(self.config, isotope_error=0)) as exp:
-            self.pairs_iso0 = {(int(i), int(j)) for i, j, _ in exp.score_array}
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        with Experiment(
+            dataclasses.replace(cls.config, isotope_error=0), input_file=cls.test_file
+        ) as exp:
+            cls.pairs_iso0 = {(int(i), int(j)) for i, j, _ in exp.score_array}
 
-        with Experiment(dataclasses.replace(self.config, isotope_error=2)) as exp:
-            self.pairs_iso2 = {(int(i), int(j)) for i, j, _ in exp.score_array}
+        with Experiment(
+            dataclasses.replace(cls.config, isotope_error=2), input_file=cls.test_file
+        ) as exp:
+            cls.pairs_iso2 = {(int(i), int(j)) for i, j, _ in exp.score_array}
             # Copy out of shared memory so values stay valid after Experiment cleanup.
-            self.iso2_score_array = exp.score_array.copy()
-            self.peptide_mz = exp.peptides["m/z"].to_numpy(copy=True)
-            self.peptide_charges = exp.peptides["precursor_charges"].to_numpy(copy=True)
+            cls.iso2_score_array = exp.score_array.copy()
+            cls.peptide_mz = exp.peptides["m/z"].to_numpy(copy=True)
+            cls.peptide_charges = exp.peptides["precursor_charges"].to_numpy(copy=True)
 
-        self.extra_pairs = self.pairs_iso2 - self.pairs_iso0
+        cls.extra_pairs = cls.pairs_iso2 - cls.pairs_iso0
 
     @staticmethod
     def _best_isotope_match(i, j, mz, charges, config, max_isotope):
@@ -643,6 +746,28 @@ class ConfigToleranceTest(unittest.TestCase):
         self.assertTrue(config.within_mz_tolerance(999.99, 1000.0))
         self.assertTrue(config.within_mz_tolerance(1000.0, 999.99))
         self.assertFalse(config.within_mz_tolerance(499.9949, 500.0))
+
+    def test_scaling_factors_use_larger_min_mz_for_ppm_mode(self):
+        config = Config(
+            precursor_mz_tolerance=10.0,
+            precursor_mz_unit=MzErrorUnit.PPM,
+            irt_tolerance=5.0,
+        )
+        experiment = type(
+            "FakeDualExperiment",
+            (),
+            {
+                "config": config,
+                "peptides_1": pd.DataFrame({"m/z": [100.0, 200.0], "irt": [0.0, 1.0]}),
+                "peptides_2": pd.DataFrame({"m/z": [500.0, 600.0], "irt": [0.0, 1.0]}),
+            },
+        )()
+
+        factors = SpectrumGrouping().scaling_factors(experiment)  # type: ignore
+        expected_mz_tol = config.absolute_mz_error(500.0)
+        self.assertAlmostEqual(
+            float(factors[1]), expected_mz_tol / config.irt_tolerance
+        )
 
 
 class EquivalenceTest(TestBase):

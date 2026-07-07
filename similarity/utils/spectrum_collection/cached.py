@@ -20,8 +20,8 @@ class CachedSpectrumCollection(SpectrumCollection):
     index: "SpectrumCache"
     batch_factor: int = 10
 
-    def __init__(self, experiment: "Experiment"):
-        super().__init__(experiment)
+    def __init__(self, experiment: "Experiment", suffix: str = ""):
+        super().__init__(experiment, suffix)
         index = experiment.cache[IndexType.INTENSITY]
         if index is None:
             raise ValueError(
@@ -30,7 +30,7 @@ class CachedSpectrumCollection(SpectrumCollection):
         self.index = index
 
     def _index_key(self, key: int) -> tuple[bytes, int]:
-        df = self.experiment.peptides
+        df = self.peptides
         peptide = df.loc[key, "peptide_sequences"]
         charge = df.loc[key, "precursor_charges"]
         return peptide, charge  # type: ignore
@@ -41,7 +41,7 @@ class CachedSpectrumCollection(SpectrumCollection):
         mz, intensities = self.index[self._index_key(key)]
         return self._truncate_and_sort_spectrum(mz, intensities)
 
-    def fill_from_cache(self, experiment: "Experiment", index: "SpectrumCache") -> None:
+    def fill_from_cache(self, index: "SpectrumCache") -> None:
         """Nothing to do because all spectra are loaded on demand from cache."""
         pass
 
@@ -53,7 +53,7 @@ class CachedSpectrumCollection(SpectrumCollection):
 
     @property
     def spectra_available(self) -> "NDArray[np.bool_]":
-        available = np.zeros(len(self.experiment.peptides), dtype=np.bool_)
+        available = np.zeros(len(self.peptides), dtype=np.bool_)
         if len(self.index) < available.size / 2:
             logger.info(
                 "Cache size too small, skipping cache loading for spectra",

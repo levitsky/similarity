@@ -38,14 +38,16 @@ class PredictedSpectrumCollection(Fixture):
 
     def evaluate(self, experiment: "Experiment") -> "SpectrumCollection":
         index = cast("SpectrumCache | None", experiment.cache[IndexType.INTENSITY])
-        collection = experiment.config.spectrum_collection.value(experiment)
+        collection = experiment.config.spectrum_collection.value(
+            experiment, self.suffix
+        )
         if index is not None:
-            collection.fill_from_cache(experiment, index)
+            collection.fill_from_cache(index)
         cached = collection.spectra_available
         if cached.all():
             logger.info("All spectra are cached, skipping prediction")
             return collection
-        prediction_inputs = experiment.peptides.loc[~cached]
+        prediction_inputs = collection.peptides.loc[~cached]
         model = Koina(
             experiment.config.model_intensity.name, experiment.config.koina_host
         )
@@ -88,15 +90,21 @@ class Offsets(Fixture):
 
 
 class MzIrtDataFrame(Fixture):
-    _shared_memory: dict["Experiment", dict[str, SharedMemory]] = {}
+    _shared_memory: dict["Experiment", dict[str, SharedMemory]]
     batch_size: int = 50000
 
-    @classmethod
-    def close(cls, experiment: "Experiment"):
-        shm_dict = cls._shared_memory.pop(experiment, {})
+    def __init__(self):
+        super().__init__()
+        self._shared_memory = {}
+
+    def close(self, experiment: "Experiment"):
+        shm_dict = self._shared_memory.pop(experiment, {})
         for name, shm in shm_dict.items():
             logger.debug(
-                "Closing shared memory for experiment %d, name %s", id(experiment), name
+                "Closing %s shared memory for experiment %d, name %s",
+                self.name,
+                id(experiment),
+                name,
             )
             shm.close()
             shm.unlink()
@@ -177,25 +185,27 @@ class MzIrtDataFrame(Fixture):
         else:
             logger.info("All %s values are cached, skipping prediction", name)
 
-    @classmethod
     def shared_array(
-        cls,
+        self,
         experiment: "Experiment",
         name: str,
         shape: tuple[int, ...],
         dtype: "DTypeLike",
     ) -> np.ndarray:
-        cls._shared_memory.setdefault(experiment, {})
-        shm_dict = cls._shared_memory[experiment]
+        self._shared_memory.setdefault(experiment, {})
+        shm_dict = self._shared_memory[experiment]
         if name in shm_dict:
             shm = shm_dict[name]
         else:
             size = np.prod(shape, dtype=int) * np.dtype(dtype).itemsize
             logger.info(
-                "Allocating %.2f MB of shared memory for %s", size / 2**20, name
+                "Allocating %.2f MB of shared memory for %s with dtype %s",
+                size / 2**20,
+                name,
+                dtype,
             )
             shm = SharedMemory(
-                name=f"{name}-{id(experiment)}",
+                name=f"{name}{self.suffix}-{id(experiment)}",
                 create=True,
                 size=size,
             )
@@ -219,7 +229,7 @@ class MzIrtDataFrame(Fixture):
         if df["peptide_sequences"].isna().any():
             raise ValueError("Column peptide_sequences contains missing values")
 
-        if experiment.config.subsets > 1:
+        if self.is_first and experiment.config.subsets > 1:
             logger.info(
                 "Subset processing mode. Assuming peptide table is sorted by m/z and contains the complete peptide set."
             )
@@ -303,22 +313,23 @@ class MzIrtDataFrame(Fixture):
                 end_of_previous = ends[k - 1]
                 start = end_of_previous
 
-                while (
-                    values[end_of_previous] - values[start - 1]
-                    <= c.absolute_mz_error(values[end_of_previous])
-                    + c.isotope_error * PROTON_MASS / c.min_charge
-                ):
-                    start -= 1
-                    if (
-                        start <= previous_start
-                        or end_of_previous - start >= max_overlap
+                if not self.suffix:  # only apply overlap logic in single-input mode
+                    while (
+                        values[end_of_previous] - values[start - 1]
+                        <= c.absolute_mz_error(values[end_of_previous])
+                        + c.isotope_error * PROTON_MASS / c.min_charge
                     ):
-                        logger.error(
-                            "Subset size is too small to accommodate the %s tolerance. "
-                            "Please decrease the number of subsets.",
-                            dim,
-                        )
-                        raise ValueError("Subset size is too small")
+                        start -= 1
+                        if (
+                            start <= previous_start
+                            or end_of_previous - start >= max_overlap
+                        ):
+                            logger.error(
+                                "Subset size is too small to accommodate the %s tolerance. "
+                                "Please decrease the number of subsets.",
+                                dim,
+                            )
+                            raise ValueError("Subset size is too small")
             offsets.append((start, end))
             previous_start = start
 
@@ -334,7 +345,9 @@ class MzIrtDataFrame(Fixture):
         )
 
     def generate_sequences(self, experiment: "Experiment") -> np.ndarray:
-        input_file = cast("str | Path", experiment.config.input_file)
+        attr = self.get(experiment, "input_file")
+        input_file = cast("str | Path", attr)
+        logger.debug("Generating peptide sequences from %s as %s", input_file, attr)
         seq = np.unique(np.loadtxt(input_file, dtype=bytes))
 
         logger.info("Loaded %d unique peptide sequences from %s", len(seq), input_file)
@@ -501,9 +514,10 @@ class MzIrtDataFrame(Fixture):
                 experiment.config.subsets,
             )
             raise ValueError("Subset number is not set")
-        if experiment.peptide_table is not None:
-            logger.info("Loading peptide table from %s", experiment.peptide_table)
-            return self.load_peptide_table(experiment.peptide_table, experiment)
+        peptide_table = self.get(experiment, "peptide_table")
+        if peptide_table is not None:
+            logger.info("Loading peptide table from %s", peptide_table)
+            return self.load_peptide_table(peptide_table, experiment)
 
         seq = self.generate_sequences(experiment)
         if seq.size == 0:
@@ -521,7 +535,8 @@ class MzIrtDataFrame(Fixture):
         sort_idx = np.argsort(mz_array)
         mz_array = mz_array[sort_idx]
 
-        if experiment.config.subsets > 1:
+        # if processing the first (or only) input, apply the offset logic
+        if self.is_first and experiment.config.subsets > 1:
             offsets = self.subset_offsets(experiment, mz_array)
             logger.debug(
                 "Configured %d subsets with offsets %s",
@@ -545,7 +560,7 @@ class MzIrtDataFrame(Fixture):
                 experiment.offsets[-3:],
             )
         else:
-            logger.info("Processing all %d precursors", nprecursors)
+            logger.info("Processing all %d precursors for %s", nprecursors, self)
             idx_start, idx_end = 0, nprecursors
 
         subset_size = idx_end - idx_start
@@ -633,6 +648,16 @@ class MzIrtDataFrame(Fixture):
             )
             peptide_data["ccs"] = mzrt[:, 2]
 
+        logger.debug("Creating peptide DataFrame%s with columns:", self.suffix)
+        for col, values in peptide_data.items():
+            logger.debug(
+                "  %s: dtype=%s, shape=%s, samples=%s ... %s",
+                col,
+                values.dtype,
+                values.shape,
+                values[:5],
+                values[-5:],
+            )
         df = pd.DataFrame(
             peptide_data,
             copy=False,

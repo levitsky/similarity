@@ -26,10 +26,10 @@ class SharedArraySpectrumCollection(SpectrumCollection):
     array: "NDArray[np.float32]"
     shape: tuple[int, int, int]
 
-    def __init__(self, experiment: "Experiment"):
-        super().__init__(experiment)
-        self.shape = (experiment.peptides.shape[0], 2, experiment.config.max_peaks)
-        self.offset = experiment.peptides.index[0]
+    def __init__(self, experiment: "Experiment", suffix: str = ""):
+        super().__init__(experiment, suffix)
+        self.shape = (self.peptides.shape[0], 2, self.experiment.config.max_peaks)
+        self.offset = self.peptides.index[0]
         size = (
             self.shape[0]
             * self.shape[1]
@@ -41,7 +41,7 @@ class SharedArraySpectrumCollection(SpectrumCollection):
         )
         self.shared_memory = SharedMemory(
             create=True,
-            name=f"SharedArraySpectrumCollection-Experiment-{id(experiment)}",
+            name=f"SharedArraySpectrumCollection{self.suffix}-Experiment-{id(experiment)}",
             size=size,
         )
         self.sm_name = self.shared_memory.name
@@ -51,8 +51,9 @@ class SharedArraySpectrumCollection(SpectrumCollection):
             buffer=self.shared_memory.buf,
         )
         self.array.fill(np.nan)
-        if experiment.spectrum_file:
-            self.load_from_file(experiment.spectrum_file)
+        spectrum_file = getattr(experiment, "spectrum_file" + self.suffix)
+        if spectrum_file:
+            self.load_from_file(spectrum_file)
 
     def load_from_file(self, file: "str | Path") -> None:
         arr = np.load(file)
@@ -108,9 +109,9 @@ class SharedArraySpectrumCollection(SpectrumCollection):
             buffer=self.shared_memory.buf,
         )
 
-    def fill_from_cache(self, experiment: "Experiment", index: "SpectrumCache") -> None:
-        spectra = [[] for _ in range(len(experiment.peptides))]
-        index.fill_from_cache(experiment.peptides, spectra)
+    def fill_from_cache(self, index: "SpectrumCache") -> None:
+        spectra = [[] for _ in range(len(self.peptides))]
+        index.fill_from_cache(self.peptides, spectra)
         for i, cached in enumerate(spectra):
             if cached is not np.nan:
                 mz, intensities = cached
@@ -132,12 +133,12 @@ class SharedArraySpectrumCollection(SpectrumCollection):
 
     def save(self, file: "str | Path") -> None:
         """Save the collection to a file."""
-        logger.info("Saving predicted spectra to %s...", file)
+        logger.info("Saving %s to %s...", self, file)
         np.save(file, self.array)
 
     @property
     def spectra_available(self) -> "NDArray[np.bool_]":
-        available = np.zeros(len(self.experiment.peptides), dtype=np.bool_)
+        available = np.zeros(len(self.peptides), dtype=np.bool_)
         for i in range(len(available)):
             available[i] = not np.isnan(self.array[i, 0, 0])
         logger.info(

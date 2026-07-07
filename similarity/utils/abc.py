@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import logging
 from datetime import datetime
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, overload, Self
 from enum import Enum
 import numpy as np
 
@@ -18,21 +18,29 @@ logger = logging.getLogger(__name__)
 class Fixture(ABC):
     """A descriptor for a calculation result. The result is calculated lazily on first access and then cached for subsequent accesses."""
 
-    _data: dict["Experiment", Any] = {}
+    _data: dict["Experiment", Any]
 
     @abstractmethod
     def evaluate(self, experiment: "Experiment") -> Any:
         pass
 
-    def __init_subclass__(cls) -> None:
-        cls._data = {}
-        super().__init_subclass__()
+    def __init__(self):
+        self._data = {}
+
+    @overload
+    def __get__(self, obj: None, objtype: type) -> Self: ...
+
+    @overload
+    def __get__(self, obj: "Experiment", objtype: type | None) -> Any: ...
 
     def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self
         if obj not in self._data:
             logger.info(
-                "Started evaluating %s for %s %d",
+                "Started evaluating %s%s for %s %d",
                 self.__class__.__name__,
+                self.suffix,
                 obj.__class__.__name__,
                 id(obj),
             )
@@ -41,20 +49,56 @@ class Fixture(ABC):
             end_time = datetime.now()
 
             logger.info(
-                "Finished evaluating %s for %s %d in %s",
+                "Finished evaluating %s%s for %s %d in %s",
                 self.__class__.__name__,
+                self.suffix,
                 obj.__class__.__name__,
                 id(obj),
                 end_time - start_time,
             )
         return self._data[obj]
 
+    def get(self, obj: Any, name: str) -> Any:
+        """
+        Use another fixture on the same experiment. This automatically adds the suffix to the name of the fixture, if applicable.
+        """
+        attr = name + self.suffix
+        return getattr(obj, attr)
+
     def __set__(self, obj, value):
         raise AttributeError(f"Cannot set value of fixture {self.__class__.__name__}")
 
-    @classmethod
-    def exists(cls, obj) -> bool:
-        return obj in cls._data
+    @staticmethod
+    def get_suffix(name: str) -> str:
+        if "_" not in name:
+            return ""
+        right = name.rsplit("_", 1)[1]
+        if right.isdigit():
+            return "_" + right
+        return ""
+
+    @property
+    def is_first(self) -> bool:
+        return self.suffix in {"", "_1"}
+
+    def __set_name__(self, owner, name):
+        self.name = name
+        self.suffix = self.get_suffix(name)
+        self.owner = owner
+        logger.debug(
+            "Setting name of fixture %s of %s %d to %s with suffix %s",
+            self.__class__.__name__,
+            owner.__name__,
+            id(owner),
+            self.name,
+            self.suffix,
+        )
+
+    def exists(self, obj: "Experiment") -> bool:
+        return obj in self._data
+
+    def __str__(self):
+        return f"{self.__class__.__name__}({self.name})"
 
 
 class IndexType(Enum):
@@ -137,8 +181,13 @@ class Cache(ABC):
 class SpectrumCollection(ABC):
     """A container of spectra for use in grouping and scoring. Needs to support returning spectra by integer peptide index and support multiprocessing."""
 
-    def __init__(self, experiment: "Experiment"):
+    def __init__(self, experiment: "Experiment", suffix: str = ""):
         self.experiment = experiment
+        self.suffix = suffix
+
+    @property
+    def peptides(self) -> "pd.DataFrame":
+        return getattr(self.experiment, "peptides" + self.suffix)
 
     @abstractmethod
     def __getitem__(
@@ -147,7 +196,7 @@ class SpectrumCollection(ABC):
         pass
 
     @abstractmethod
-    def fill_from_cache(self, experiment: "Experiment", index: "SpectrumCache") -> None:
+    def fill_from_cache(self, index: "SpectrumCache") -> None:
         """Fill missing spectra from cache."""
         pass
 
@@ -194,10 +243,5 @@ class SpectrumCollection(ABC):
         order = np.argsort(mz, kind="mergesort")
         return mz[order], intensities[order]
 
-
-class CacheBasedSpectrumCollection(SpectrumCollection):
-    """A SpectrumCollection that just retrieves spectra from cache on demand."""
-
-    def __init__(self, experiment: "Experiment", index: "SpectrumCache"):
-        super().__init__(experiment)
-        self.index = index
+    def __str__(self):
+        return f"{self.__class__.__name__}{self.suffix} for {self.experiment.__class__.__name__}({id(self.experiment)})"

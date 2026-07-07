@@ -71,8 +71,12 @@ class BaseConfig(ABC):
         return name, kw
 
     @classmethod
-    def argparser(cls) -> argparse.ArgumentParser:
-        parser = argparse.ArgumentParser(description="Experiment configuration")
+    def argparser(
+        cls, parser: argparse.ArgumentParser | None = None
+    ) -> argparse.ArgumentParser:
+        parser = parser or argparse.ArgumentParser(
+            description="Experiment configuration"
+        )
         for field in fields(cls):
             if field.name == "cache_conf":
                 cache_group = parser.add_argument_group("Cache configuration")
@@ -186,7 +190,6 @@ class FragmentationType(LiteralEnum):
 
 @dataclass(frozen=True, slots=True)
 class Config(BaseConfig):
-    input_file: Path | None = None
     collision_energy: int = 30
     fragmentation_type: FragmentationType = FragmentationType.HCD
     min_charge: int = 2

@@ -24,7 +24,7 @@ class ExperimentWorker(ABC, mp.Process):
         return super().run()
 
 
-class ExperimentRunner:
+class SingleInputExperimentRunner:
     """
     A class responsible for running an experiment with subsets.
     When `run` is called, it will create an Experiment object for each subset and run them.
@@ -41,6 +41,7 @@ class ExperimentRunner:
     def __init__(
         self,
         config: "Config",
+        input_file: str | Path,
         peptide_table: str | Path,
         jobs: int = 1,  # unsupported for now
         create_peptide_table: bool = True,
@@ -50,8 +51,9 @@ class ExperimentRunner:
         score_df_file: str | None = None,
     ):
         logger.debug(
-            "Initializing ExperimentRunner with config: %s, peptide_table: %s, jobs: %d, create_peptide_table: %s, spectrum_file: %s, create_spectrum_file: %s, array_file: %s, score_df_file: %s",
+            "Initializing ExperimentRunner with config: %s, input_file: %s, peptide_table: %s, jobs: %d, create_peptide_table: %s, spectrum_file: %s, create_spectrum_file: %s, array_file: %s, score_df_file: %s",
             config,
+            input_file,
             peptide_table,
             jobs,
             create_peptide_table,
@@ -61,6 +63,7 @@ class ExperimentRunner:
             score_df_file,
         )
         self.config = config
+        self.input_file = input_file
         # self.jobs = jobs
         self.create_peptide_table = create_peptide_table
         self.peptide_table = peptide_table
@@ -70,10 +73,12 @@ class ExperimentRunner:
         self.score_df_file = score_df_file
 
     def run_subset(self, subset: int):
-        from ..experiment import Experiment
+        from ..experiment import SingleInputExperiment
 
         c = replace(self.config, subset=subset)
-        with Experiment(c, self.peptide_table, self.spectrum_file) as experiment:
+        with SingleInputExperiment(
+            c, self.input_file, self.peptide_table, self.spectrum_file
+        ) as experiment:
             logger.info(
                 "Running experiment %d for subset %d of %d",
                 id(experiment),
@@ -96,10 +101,15 @@ class ExperimentRunner:
                 experiment.score_df.to_csv(score_df_path, index=False)
 
     def create_prerequisites(self):
-        from ..experiment import Experiment
+        from ..experiment import SingleInputExperiment
 
         c = replace(self.config, subsets=1)
-        with Experiment(c) as experiment:
+        with SingleInputExperiment(
+            c,
+            input_file=self.input_file,
+            peptide_table=self.peptide_table if not self.create_peptide_table else None,
+            spectrum_file=self.spectrum_file if not self.create_spectrum_file else None,
+        ) as experiment:
             if self.create_peptide_table:
                 logger.info(
                     "Creating full peptide table for the entire dataset at %s",
