@@ -12,6 +12,7 @@ from datetime import datetime
 from dataclasses import fields
 from typing import TYPE_CHECKING, Any
 from argparse import ArgumentParser
+import cProfile
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -108,7 +109,7 @@ def parse_args(
     logger = setup_logging(args)
     logger.debug("Parsed arguments: %s", args)
     kw = vars(args).copy()
-    exclude_keys = ["verbose", "output_file", "array_file", "log_file"]
+    exclude_keys = ["verbose", "output_file", "array_file", "log_file", "profile_file"]
     for suffix in suffixes or [""]:
         for key in [
             "input_file",
@@ -250,6 +251,9 @@ def dual_input_experiment() -> None:
 
 def time_scoring_single() -> None:
     p = get_argparser(Config)
+    p.add_argument(
+        "-f", "--profile-file", type=Path, help="Path to save profiling results"
+    )
     args, kw, logger = parse_args(p)
 
     config = Config(**kw)
@@ -270,7 +274,15 @@ def time_scoring_single() -> None:
         _ = exp.predicted_spectra  # Ensure spectra are predicted before timing
         logger.info("Timing the scoring...")
         start_time = datetime.now()
-        arr = exp.score_array
+        if args.profile_file:
+            profiler = cProfile.Profile()
+            profiler.enable()
+            arr = exp.score_array
+            profiler.disable()
+            profiler.dump_stats(args.profile_file)
+            logger.info("Saved profiling results to %s", args.profile_file)
+        else:
+            arr = exp.score_array
         elapsed = datetime.now() - start_time
         logger.info("Scoring completed in %s", elapsed)
         if args.array_file:
