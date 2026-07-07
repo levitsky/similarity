@@ -2,7 +2,7 @@
 "External" runner for memray. Equivalent to the `run` entrypoint.
 """
 
-from similarity.cli import experiment
+from similarity.cli import single_input_experiment
 
 if __name__ == "__main__":
-    experiment()
+    single_input_experiment()
