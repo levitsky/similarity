@@ -87,19 +87,18 @@ class GroupingWorker(ExperimentWorker):
 
     def within_tolerance_2d(self, i: int, j: int) -> bool:
         irt_tol = self.config.irt_tolerance
-        return (
-            self.within_mz_tolerance(i, j)
-            and abs(self.mzrt_1[i, 1] - self.mzrt_2[j, 1]) <= irt_tol
-        )
+        return abs(
+            self.mzrt_1[i, 1] - self.mzrt_2[j, 1]
+        ) <= irt_tol and self.within_mz_tolerance(i, j)
 
     def within_tolerance_3d(self, i: int, j: int) -> bool:
         irt_tol = self.config.irt_tolerance
         ccs_rtol = self.config.ccs_rtolerance
         return (
-            self.within_mz_tolerance(i, j)
-            and abs(self.mzrt_1[i, 1] - self.mzrt_2[j, 1]) <= irt_tol
+            abs(self.mzrt_1[i, 1] - self.mzrt_2[j, 1]) <= irt_tol
             and abs(self.mzrt_1[i, 2] - self.mzrt_2[j, 2])
             <= ccs_rtol * max(self.mzrt_1[i, 2], self.mzrt_2[j, 2])
+            and self.within_mz_tolerance(i, j)
         )
 
     def tolerance_check(self):
