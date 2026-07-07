@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from numpy.typing import DTypeLike
     from .experiment import Experiment
     from .utils.abc import Cache, SpectrumCollection
+    from .utils.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +27,67 @@ class PredictedSpectrumCollection(Fixture):
     batch_size: int = 10000
 
     @staticmethod
+    def _merge_close_peaks(
+        mz: "np.ndarray", intensities: "np.ndarray", config: "Config"
+    ) -> int:
+        if mz.size == 0:
+            return 0
+
+        write = 0
+        current_mz = float(mz[0])
+        current_intensity = float(intensities[0])
+
+        for read in range(1, mz.size):
+            next_mz = float(mz[read])
+            next_intensity = float(intensities[read])
+
+            if (
+                current_mz > 0
+                and next_mz > 0
+                and current_intensity > 0
+                and next_intensity > 0
+            ):
+                # check both widths in case resolution increases with m/z
+                current_width = current_mz / config.resolution_at_mz(current_mz)
+                next_width = next_mz / config.resolution_at_mz(next_mz)
+                if next_mz - current_mz <= max(current_width, next_width):
+                    merged_intensity = current_intensity + next_intensity
+                    current_mz = (
+                        current_mz * current_intensity + next_mz * next_intensity
+                    ) / merged_intensity
+                    current_intensity = merged_intensity
+                    continue
+
+            mz[write] = current_mz
+            intensities[write] = current_intensity
+            write += 1
+            current_mz = next_mz
+            current_intensity = next_intensity
+
+        mz[write] = current_mz
+        intensities[write] = current_intensity
+        return write + 1
+
+    @staticmethod
     def preprocess_predictions(
-        result: dict[str, list["np.ndarray"]],
+        result: dict[str, list["np.ndarray"]], config: "Config"
     ) -> dict[str, list["np.ndarray"]]:
         for mz, intensities in zip(result["mz"], result["intensities"]):
-            np.sqrt(intensities, out=intensities, where=intensities > 0)
             order = np.argsort(mz, kind="mergesort")
             mz[:] = mz[order]
             intensities[:] = intensities[order]
+            npeaks = PredictedSpectrumCollection._merge_close_peaks(
+                mz, intensities, config
+            )
+
+            np.sqrt(
+                intensities[:npeaks],
+                out=intensities[:npeaks],
+                where=intensities[:npeaks] > 0,
+            )
+            if npeaks < mz.size:
+                mz[npeaks:] = -1.0
+                intensities[npeaks:] = -1.0
         return result
 
     def evaluate(self, experiment: "Experiment") -> "SpectrumCollection":
@@ -67,7 +121,7 @@ class PredictedSpectrumCollection(Fixture):
                 logger.debug("Predicting batch %d of %d ...", i + 1, nbatches)
                 batch_inputs = prediction_inputs.iloc[i * bsize : (i + 1) * bsize]
                 result: dict[str, list["np.ndarray"]] = model.predict(batch_inputs, df_output=False, mode="async", disable_progress_bar=True)  # type: ignore
-                result = self.preprocess_predictions(result)
+                result = self.preprocess_predictions(result, experiment.config)
 
                 collection.fill_from_predictions(batch_inputs, result)
                 if index is not None:

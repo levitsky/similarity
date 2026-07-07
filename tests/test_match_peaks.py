@@ -145,10 +145,23 @@ class MatchPeaksTest(unittest.TestCase):
             "intensities": [np.array([9.0, 1.0, 4.0], dtype=np.float32)],
         }
 
-        PredictedSpectrumCollection.preprocess_predictions(result)
+        PredictedSpectrumCollection.preprocess_predictions(result, Config())
 
         np.testing.assert_allclose(result["mz"][0], [100.0, 150.0, 200.0])
         np.testing.assert_allclose(result["intensities"][0], [1.0, 2.0, 3.0])
+
+    def test_preprocess_predictions_merges_resolution_limited_peaks(self):
+        result = {
+            "mz": [np.array([200.02, 200.003, 200.0], dtype=np.float32)],
+            "intensities": [np.array([4.0, 16.0, 9.0], dtype=np.float32)],
+        }
+
+        PredictedSpectrumCollection.preprocess_predictions(result, Config())
+
+        np.testing.assert_allclose(
+            result["mz"][0], [200.00192, 200.02, -1.0], atol=1e-5
+        )
+        np.testing.assert_allclose(result["intensities"][0], [5.0, 2.0, -1.0])
 
     def test_shared_array_fill_from_cache_preserves_sorted_order_after_truncation(self):
         experiment = SimpleNamespace(
