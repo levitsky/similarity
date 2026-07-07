@@ -10,6 +10,7 @@ from types import UnionType
 from datetime import datetime
 from dataclasses import fields
 from typing import TYPE_CHECKING, Any
+import cProfile
 
 if TYPE_CHECKING:
     from .utils.config import BaseConfig
@@ -69,6 +70,7 @@ def parse_args(
         "load_spectrum_file",
         "array_file",
         "log_file",
+        "profile_file",
     ]:
         kw.pop(key, None)
     logger.debug("Registered cache configuration arguments: %s", cache_args)
@@ -238,6 +240,9 @@ def time_scoring() -> None:
         type=Path,
         help="Path to output .npy file with raw score arrays",
     )
+    p.add_argument(
+        "-f", "--profile-file", type=Path, help="Path to save profiling results"
+    )
     args, kw, logger = parse_args(p)
 
     config = Config(**kw)
@@ -257,7 +262,15 @@ def time_scoring() -> None:
         _ = exp.predicted_spectra  # Ensure spectra are predicted before timing
         logger.info("Timing the scoring...")
         start_time = datetime.now()
-        arr = exp.score_array
+        if args.profile_file:
+            profiler = cProfile.Profile()
+            profiler.enable()
+            arr = exp.score_array
+            profiler.disable()
+            profiler.dump_stats(args.profile_file)
+            logger.info("Saved profiling results to %s", args.profile_file)
+        else:
+            arr = exp.score_array
         elapsed = datetime.now() - start_time
         logger.info("Scoring completed in %s", elapsed)
         if args.array_file:
