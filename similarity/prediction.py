@@ -4,8 +4,9 @@ import pandas as pd
 import numpy as np
 from multiprocessing.shared_memory import SharedMemory
 from koinapy import Koina
+from ._match_peaks import merge_close_peaks_sorted
 from .utils.abc import Fixture, IndexType
-from .utils.config import PROTON_MASS
+from .utils.config import PROTON_MASS, MassAnalyzerType
 from .utils.cache.common import SpectrumCache
 from pyteomics import cmass, auxiliary as aux, proforma, parser
 import logging
@@ -22,6 +23,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+MASS_ANALYZER_CODES = {
+    MassAnalyzerType.Orbitrap: 0,
+    MassAnalyzerType.TOF: 1,
+    MassAnalyzerType.FTICR: 2,
+}
+
 
 class PredictedSpectrumCollection(Fixture):
     batch_size: int = 10000
@@ -30,43 +37,12 @@ class PredictedSpectrumCollection(Fixture):
     def _merge_close_peaks(
         mz: "np.ndarray", intensities: "np.ndarray", config: "Config"
     ) -> int:
-        if mz.size == 0:
-            return 0
-
-        write = 0
-        current_mz = float(mz[0])
-        current_intensity = float(intensities[0])
-
-        for read in range(1, mz.size):
-            next_mz = float(mz[read])
-            next_intensity = float(intensities[read])
-
-            if (
-                current_mz > 0
-                and next_mz > 0
-                and current_intensity > 0
-                and next_intensity > 0
-            ):
-                # check both widths in case resolution increases with m/z
-                current_width = current_mz / config.resolution_at_mz(current_mz)
-                next_width = next_mz / config.resolution_at_mz(next_mz)
-                if next_mz - current_mz <= max(current_width, next_width):
-                    merged_intensity = current_intensity + next_intensity
-                    current_mz = (
-                        current_mz * current_intensity + next_mz * next_intensity
-                    ) / merged_intensity
-                    current_intensity = merged_intensity
-                    continue
-
-            mz[write] = current_mz
-            intensities[write] = current_intensity
-            write += 1
-            current_mz = next_mz
-            current_intensity = next_intensity
-
-        mz[write] = current_mz
-        intensities[write] = current_intensity
-        return write + 1
+        return merge_close_peaks_sorted(
+            mz,
+            intensities,
+            float(config.resolution),
+            MASS_ANALYZER_CODES[config.mass_analyzer],
+        )
 
     @staticmethod
     def preprocess_predictions(

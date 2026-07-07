@@ -7,12 +7,25 @@ typedef struct {
     double (*get_value)(PyArrayObject *, npy_intp);
 } Accessor;
 
+typedef struct {
+    double (*get_value)(PyArrayObject *, npy_intp);
+    void (*set_value)(PyArrayObject *, npy_intp, double);
+} MutableAccessor;
+
 static double get_float32(PyArrayObject *array, npy_intp index) {
     return (double)*(float *)PyArray_GETPTR1(array, index);
 }
 
 static double get_float64(PyArrayObject *array, npy_intp index) {
     return *(double *)PyArray_GETPTR1(array, index);
+}
+
+static void set_float32(PyArrayObject *array, npy_intp index, double value) {
+    *(float *)PyArray_GETPTR1(array, index) = (float)value;
+}
+
+static void set_float64(PyArrayObject *array, npy_intp index, double value) {
+    *(double *)PyArray_GETPTR1(array, index) = value;
 }
 
 static int configure_accessor(PyArrayObject **array, Accessor *accessor) {
@@ -34,6 +47,83 @@ static int configure_accessor(PyArrayObject **array, Accessor *accessor) {
     *array = cast;
     accessor->get_value = get_float64;
     return 0;
+}
+
+static int configure_mutable_accessor(PyArrayObject *array, MutableAccessor *accessor) {
+    int typenum = PyArray_TYPE(array);
+    if (typenum == NPY_FLOAT32) {
+        accessor->get_value = get_float32;
+        accessor->set_value = set_float32;
+        return 0;
+    }
+    if (typenum == NPY_FLOAT64) {
+        accessor->get_value = get_float64;
+        accessor->set_value = set_float64;
+        return 0;
+    }
+
+    PyErr_SetString(PyExc_TypeError, "merge_close_peaks_sorted only supports float32 and float64 arrays");
+    return -1;
+}
+
+static double resolution_at_mz(double resolution, int analyzer_code, double mz) {
+    switch (analyzer_code) {
+        case 0:
+            return resolution * sqrt(200.0 / mz);
+        case 1:
+            return resolution;
+        case 2:
+            return resolution * (200.0 / mz);
+        default:
+            return -1.0;
+    }
+}
+
+static npy_intp merge_close_peaks_impl(
+    PyArrayObject *mz,
+    PyArrayObject *intensities,
+    const MutableAccessor *mz_accessor,
+    const MutableAccessor *intensity_accessor,
+    double resolution,
+    int analyzer_code
+) {
+    npy_intp n = PyArray_DIM(mz, 0);
+    if (n == 0) {
+        return 0;
+    }
+
+    npy_intp write = 0;
+    double current_mz = mz_accessor->get_value(mz, 0);
+    double current_intensity = intensity_accessor->get_value(intensities, 0);
+
+    for (npy_intp read = 1; read < n; ++read) {
+        double next_mz = mz_accessor->get_value(mz, read);
+        double next_intensity = intensity_accessor->get_value(intensities, read);
+
+        if (current_mz > 0.0 && next_mz > 0.0
+            && current_intensity > 0.0 && next_intensity > 0.0) {
+            double next_width = next_mz / resolution_at_mz(resolution, analyzer_code, next_mz);
+            if (next_mz - current_mz <= next_width) {
+                double merged_intensity = current_intensity + next_intensity;
+                current_mz = (
+                    current_mz * current_intensity
+                    + next_mz * next_intensity
+                ) / merged_intensity;
+                current_intensity = merged_intensity;
+                continue;
+            }
+        }
+
+        mz_accessor->set_value(mz, write, current_mz);
+        intensity_accessor->set_value(intensities, write, current_intensity);
+        ++write;
+        current_mz = next_mz;
+        current_intensity = next_intensity;
+    }
+
+    mz_accessor->set_value(mz, write, current_mz);
+    intensity_accessor->set_value(intensities, write, current_intensity);
+    return write + 1;
 }
 
 static npy_intp count_matches(
@@ -283,6 +373,67 @@ static PyObject *similarity_score(PyObject *self, PyObject *args) {
     return PyFloat_FromDouble(score);
 }
 
+static PyObject *merge_close_peaks_sorted(PyObject *self, PyObject *args) {
+    PyObject *mz_obj;
+    PyObject *intensities_obj;
+    double resolution;
+    int analyzer_code;
+
+    if (!PyArg_ParseTuple(args, "OOdi", &mz_obj, &intensities_obj, &resolution, &analyzer_code)) {
+        return NULL;
+    }
+    if (resolution <= 0.0) {
+        PyErr_SetString(PyExc_ValueError, "resolution must be positive");
+        return NULL;
+    }
+
+    PyArrayObject *mz = (PyArrayObject *)PyArray_FromAny(
+        mz_obj, NULL, 1, 1, NPY_ARRAY_CARRAY | NPY_ARRAY_WRITEABLE, NULL
+    );
+    PyArrayObject *intensities = (PyArrayObject *)PyArray_FromAny(
+        intensities_obj, NULL, 1, 1, NPY_ARRAY_CARRAY | NPY_ARRAY_WRITEABLE, NULL
+    );
+    if (mz == NULL || intensities == NULL) {
+        Py_XDECREF(mz);
+        Py_XDECREF(intensities);
+        return NULL;
+    }
+    if (PyArray_DIM(mz, 0) != PyArray_DIM(intensities, 0)) {
+        Py_DECREF(mz);
+        Py_DECREF(intensities);
+        PyErr_SetString(PyExc_ValueError, "mz and intensities must have the same length");
+        return NULL;
+    }
+    if (analyzer_code < 0 || analyzer_code > 2) {
+        Py_DECREF(mz);
+        Py_DECREF(intensities);
+        PyErr_SetString(PyExc_ValueError, "unsupported analyzer code");
+        return NULL;
+    }
+
+    MutableAccessor mz_accessor;
+    MutableAccessor intensity_accessor;
+    if (configure_mutable_accessor(mz, &mz_accessor) < 0
+        || configure_mutable_accessor(intensities, &intensity_accessor) < 0) {
+        Py_DECREF(mz);
+        Py_DECREF(intensities);
+        return NULL;
+    }
+
+    npy_intp nmerged = merge_close_peaks_impl(
+        mz,
+        intensities,
+        &mz_accessor,
+        &intensity_accessor,
+        resolution,
+        analyzer_code
+    );
+
+    Py_DECREF(mz);
+    Py_DECREF(intensities);
+    return PyLong_FromSsize_t(nmerged);
+}
+
 static PyMethodDef MatchPeaksMethods[] = {
     {
         "match_peaks_sorted",
@@ -295,6 +446,12 @@ static PyMethodDef MatchPeaksMethods[] = {
         similarity_score,
         METH_VARARGS,
         "Compute the spectrum similarity score from matched peak indices."
+    },
+    {
+        "merge_close_peaks_sorted",
+        merge_close_peaks_sorted,
+        METH_VARARGS,
+        "Merge resolution-limited adjacent peaks in sorted m/z and intensity arrays."
     },
     {NULL, NULL, 0, NULL}
 };

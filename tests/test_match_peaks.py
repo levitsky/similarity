@@ -1,13 +1,15 @@
 import unittest
 from types import SimpleNamespace
+from time import perf_counter
 
 import numpy as np
 import pandas as pd
 
 from similarity.grouping import GroupingWorker
+from similarity._match_peaks import merge_close_peaks_sorted
 from similarity.prediction import PredictedSpectrumCollection
 from similarity.utils.abc import IndexType
-from similarity.utils.config import Config, MzErrorUnit
+from similarity.utils.config import Config, MassAnalyzerType, MzErrorUnit
 from similarity.utils.spectrum_collection.cached import CachedSpectrumCollection
 from similarity.utils.spectrum_collection.sharedarray import (
     SharedArraySpectrumCollection,
@@ -32,6 +34,47 @@ def python_similarity_score(
     denom2 = np.sum(intensities2**2)
     ndotproduct = np.clip(num / denom1 / denom2, -1.0, 1.0)
     return 1 - 2 * np.arccos(ndotproduct) / np.pi
+
+
+def python_merge_close_peaks(
+    mz: np.ndarray, intensities: np.ndarray, config: Config
+) -> int:
+    if mz.size == 0:
+        return 0
+
+    write = 0
+    current_mz = float(mz[0])
+    current_intensity = float(intensities[0])
+
+    for read in range(1, mz.size):
+        next_mz = float(mz[read])
+        next_intensity = float(intensities[read])
+
+        if (
+            current_mz > 0
+            and next_mz > 0
+            and current_intensity > 0
+            and next_intensity > 0
+        ):
+            current_width = current_mz / config.resolution_at_mz(current_mz)
+            next_width = next_mz / config.resolution_at_mz(next_mz)
+            if next_mz - current_mz <= max(current_width, next_width):
+                merged_intensity = current_intensity + next_intensity
+                current_mz = (
+                    current_mz * current_intensity + next_mz * next_intensity
+                ) / merged_intensity
+                current_intensity = merged_intensity
+                continue
+
+        mz[write] = current_mz
+        intensities[write] = current_intensity
+        write += 1
+        current_mz = next_mz
+        current_intensity = next_intensity
+
+    mz[write] = current_mz
+    intensities[write] = current_intensity
+    return write + 1
 
 
 class FakeSpectrumIndex:
@@ -61,6 +104,42 @@ class FakeSpectrumIndex:
 
 
 class MatchPeaksTest(unittest.TestCase):
+    def test_merge_close_peaks_c_matches_python_reference(self):
+        rng = np.random.default_rng(7)
+        for mass_analyzer in MassAnalyzerType:
+            config = Config(mass_analyzer=mass_analyzer)
+            for _ in range(25):
+                mz = np.sort(rng.uniform(100.0, 1500.0, size=128).astype(np.float32))
+                mz[1::7] = mz[::7][: mz[1::7].shape[0]] + rng.uniform(
+                    1e-6, 5e-3, size=mz[1::7].shape[0]
+                ).astype(np.float32)
+                intensities = rng.uniform(1e-4, 100.0, size=128).astype(np.float32)
+
+                mz_python = mz.copy()
+                intensities_python = intensities.copy()
+                mz_c = mz.copy()
+                intensities_c = intensities.copy()
+
+                expected = python_merge_close_peaks(
+                    mz_python, intensities_python, config
+                )
+                actual = merge_close_peaks_sorted(
+                    mz_c,
+                    intensities_c,
+                    float(config.resolution),
+                    {
+                        MassAnalyzerType.Orbitrap: 0,
+                        MassAnalyzerType.TOF: 1,
+                        MassAnalyzerType.FTICR: 2,
+                    }[mass_analyzer],
+                )
+
+                self.assertEqual(actual, expected)
+                np.testing.assert_allclose(mz_c[:actual], mz_python[:expected])
+                np.testing.assert_allclose(
+                    intensities_c[:actual], intensities_python[:expected]
+                )
+
     def test_match_peaks_matches_dense_reference(self):
         cases = [
             (
