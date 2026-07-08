@@ -127,11 +127,7 @@ class MatchPeaksTest(unittest.TestCase):
                     mz_c,
                     intensities_c,
                     float(config.resolution),
-                    {
-                        MassAnalyzerType.Orbitrap: 0,
-                        MassAnalyzerType.TOF: 1,
-                        MassAnalyzerType.FTICR: 2,
-                    }[mass_analyzer],
+                    mass_analyzer.value,
                 )
 
                 self.assertEqual(actual, expected)
