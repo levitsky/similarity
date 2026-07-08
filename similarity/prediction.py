@@ -4,8 +4,9 @@ import pandas as pd
 import numpy as np
 from multiprocessing.shared_memory import SharedMemory
 from koinapy import Koina
+from ._match_peaks import merge_close_peaks_sorted
 from .utils.abc import Fixture, IndexType
-from .utils.config import PROTON_MASS
+from .utils.config import PROTON_MASS, MassAnalyzerType
 from .utils.cache.common import SpectrumCache
 from pyteomics import cmass, auxiliary as aux, proforma, parser
 import logging
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
     from numpy.typing import DTypeLike
     from .experiment import Experiment
     from .utils.abc import Cache, SpectrumCollection
+    from .utils.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +28,36 @@ class PredictedSpectrumCollection(Fixture):
     batch_size: int = 10000
 
     @staticmethod
+    def _merge_close_peaks(
+        mz: "np.ndarray", intensities: "np.ndarray", config: "Config"
+    ) -> int:
+        return merge_close_peaks_sorted(
+            mz,
+            intensities,
+            float(config.resolution),
+            config.mass_analyzer.value,
+        )
+
+    @staticmethod
     def preprocess_predictions(
-        result: dict[str, list["np.ndarray"]],
+        result: dict[str, list["np.ndarray"]], config: "Config"
     ) -> dict[str, list["np.ndarray"]]:
         for mz, intensities in zip(result["mz"], result["intensities"]):
-            np.sqrt(intensities, out=intensities, where=intensities > 0)
             order = np.argsort(mz, kind="mergesort")
             mz[:] = mz[order]
             intensities[:] = intensities[order]
+            npeaks = PredictedSpectrumCollection._merge_close_peaks(
+                mz, intensities, config
+            )
+
+            np.sqrt(
+                intensities[:npeaks],
+                out=intensities[:npeaks],
+                where=intensities[:npeaks] > 0,
+            )
+            if npeaks < mz.size:
+                mz[npeaks:] = -1.0
+                intensities[npeaks:] = -1.0
         return result
 
     def evaluate(self, experiment: "Experiment") -> "SpectrumCollection":
@@ -67,7 +91,7 @@ class PredictedSpectrumCollection(Fixture):
                 logger.debug("Predicting batch %d of %d ...", i + 1, nbatches)
                 batch_inputs = prediction_inputs.iloc[i * bsize : (i + 1) * bsize]
                 result: dict[str, list["np.ndarray"]] = model.predict(batch_inputs, df_output=False, mode="async", disable_progress_bar=True)  # type: ignore
-                result = self.preprocess_predictions(result)
+                result = self.preprocess_predictions(result, experiment.config)
 
                 collection.fill_from_predictions(batch_inputs, result)
                 if index is not None:

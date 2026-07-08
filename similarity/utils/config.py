@@ -188,6 +188,12 @@ class FragmentationType(LiteralEnum):
     CID = auto()
 
 
+class MassAnalyzerType(Enum):
+    Orbitrap = auto()
+    TOF = auto()
+    FTICR = auto()
+
+
 @dataclass(frozen=True, slots=True)
 class Config(BaseConfig):
     collision_energy: int = 30
@@ -208,6 +214,8 @@ class Config(BaseConfig):
     fragment_mz_tolerance: float = 10.0
     fragment_mz_unit: MzErrorUnit = MzErrorUnit.PPM
     ccs_rtolerance: float = 0.02
+    resolution: int = 30000
+    mass_analyzer: MassAnalyzerType = MassAnalyzerType.Orbitrap
     nonstandard_aminoacids: bool = False
     ptms: bool = False
     fixed_mods: list[str] | None = None
@@ -235,6 +243,16 @@ class Config(BaseConfig):
         if mz1 > mz2:
             mz1, mz2 = mz2, mz1
         return mz2 - mz1 <= self.absolute_mz_error(mz2)
+
+    def resolution_at_mz(self, mz: float):
+        if self.mass_analyzer == MassAnalyzerType.Orbitrap:
+            return self.resolution * (200.0 / mz) ** 0.5
+        elif self.mass_analyzer == MassAnalyzerType.TOF:
+            return self.resolution
+        elif self.mass_analyzer == MassAnalyzerType.FTICR:
+            return self.resolution * (200.0 / mz)
+        else:
+            raise ValueError(f"Unsupported mass analyzer type: {self.mass_analyzer}")
 
     def __post_init__(self):
         if self.cache != CacheType.NONE and self.cache_conf is None:

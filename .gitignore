@@ -12,3 +12,4 @@ cache.db*
 .stfolder
 *.so
 data/
+build/

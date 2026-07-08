@@ -1,13 +1,15 @@
 import unittest
 from types import SimpleNamespace
+from time import perf_counter
 
 import numpy as np
 import pandas as pd
 
 from similarity.grouping import GroupingWorker
+from similarity._match_peaks import merge_close_peaks_sorted
 from similarity.prediction import PredictedSpectrumCollection
 from similarity.utils.abc import IndexType
-from similarity.utils.config import Config, MzErrorUnit
+from similarity.utils.config import Config, MassAnalyzerType, MzErrorUnit
 from similarity.utils.spectrum_collection.cached import CachedSpectrumCollection
 from similarity.utils.spectrum_collection.sharedarray import (
     SharedArraySpectrumCollection,
@@ -32,6 +34,47 @@ def python_similarity_score(
     denom2 = np.sum(intensities2**2)
     ndotproduct = np.clip(num / denom1 / denom2, -1.0, 1.0)
     return 1 - 2 * np.arccos(ndotproduct) / np.pi
+
+
+def python_merge_close_peaks(
+    mz: np.ndarray, intensities: np.ndarray, config: Config
+) -> int:
+    if mz.size == 0:
+        return 0
+
+    write = 0
+    current_mz = float(mz[0])
+    current_intensity = float(intensities[0])
+
+    for read in range(1, mz.size):
+        next_mz = float(mz[read])
+        next_intensity = float(intensities[read])
+
+        if (
+            current_mz > 0
+            and next_mz > 0
+            and current_intensity > 0
+            and next_intensity > 0
+        ):
+            current_width = current_mz / config.resolution_at_mz(current_mz)
+            next_width = next_mz / config.resolution_at_mz(next_mz)
+            if next_mz - current_mz <= max(current_width, next_width):
+                merged_intensity = current_intensity + next_intensity
+                current_mz = (
+                    current_mz * current_intensity + next_mz * next_intensity
+                ) / merged_intensity
+                current_intensity = merged_intensity
+                continue
+
+        mz[write] = current_mz
+        intensities[write] = current_intensity
+        write += 1
+        current_mz = next_mz
+        current_intensity = next_intensity
+
+    mz[write] = current_mz
+    intensities[write] = current_intensity
+    return write + 1
 
 
 class FakeSpectrumIndex:
@@ -61,6 +104,62 @@ class FakeSpectrumIndex:
 
 
 class MatchPeaksTest(unittest.TestCase):
+    def test_merge_close_peaks_c_matches_python_reference(self):
+        rng = np.random.default_rng(7)
+        for mass_analyzer in MassAnalyzerType:
+            config = Config(mass_analyzer=mass_analyzer)
+            for _ in range(25):
+                mz = np.sort(rng.uniform(100.0, 1500.0, size=128).astype(np.float32))
+                mz[1::7] = mz[::7][: mz[1::7].shape[0]] + rng.uniform(
+                    1e-6, 5e-3, size=mz[1::7].shape[0]
+                ).astype(np.float32)
+                intensities = rng.uniform(1e-4, 100.0, size=128).astype(np.float32)
+
+                mz_python = mz.copy()
+                intensities_python = intensities.copy()
+                mz_c = mz.copy()
+                intensities_c = intensities.copy()
+
+                expected = python_merge_close_peaks(
+                    mz_python, intensities_python, config
+                )
+                actual = merge_close_peaks_sorted(
+                    mz_c,
+                    intensities_c,
+                    float(config.resolution),
+                    mass_analyzer.value,
+                )
+
+                self.assertEqual(actual, expected)
+                np.testing.assert_allclose(mz_c[:actual], mz_python[:expected])
+                np.testing.assert_allclose(
+                    intensities_c[:actual], intensities_python[:expected]
+                )
+
+    def test_merge_close_peaks_c_tail_truncation_with_returned_npeaks(self):
+        config = Config(mass_analyzer=MassAnalyzerType.Orbitrap)
+        mz = np.array(
+            [200.0, 200.001, 200.002, 200.02, 200.021, 200.8], dtype=np.float32
+        )
+        intensities = np.array([9.0, 16.0, 25.0, 4.0, 1.0, 36.0], dtype=np.float32)
+
+        npeaks = merge_close_peaks_sorted(
+            mz,
+            intensities,
+            float(config.resolution),
+            config.mass_analyzer.value,
+        )
+
+        mz[npeaks:] = -1.0
+        intensities[npeaks:] = -1.0
+
+        self.assertLess(npeaks, 6)
+        self.assertTrue(np.all(np.diff(mz[:npeaks]) >= 0))
+        self.assertTrue(np.all(mz[:npeaks] > 0))
+        self.assertTrue(np.all(intensities[:npeaks] > 0))
+        self.assertTrue(np.all(mz[npeaks:] == -1.0))
+        self.assertTrue(np.all(intensities[npeaks:] == -1.0))
+
     def test_match_peaks_matches_dense_reference(self):
         cases = [
             (
@@ -145,10 +244,35 @@ class MatchPeaksTest(unittest.TestCase):
             "intensities": [np.array([9.0, 1.0, 4.0], dtype=np.float32)],
         }
 
-        PredictedSpectrumCollection.preprocess_predictions(result)
+        PredictedSpectrumCollection.preprocess_predictions(result, Config())
 
         np.testing.assert_allclose(result["mz"][0], [100.0, 150.0, 200.0])
         np.testing.assert_allclose(result["intensities"][0], [1.0, 2.0, 3.0])
+
+    def test_preprocess_predictions_merges_resolution_limited_peaks(self):
+        result = {
+            "mz": [np.array([200.02, 200.003, 200.0], dtype=np.float32)],
+            "intensities": [np.array([4.0, 16.0, 9.0], dtype=np.float32)],
+        }
+
+        PredictedSpectrumCollection.preprocess_predictions(result, Config())
+
+        np.testing.assert_allclose(
+            result["mz"][0], [200.00192, 200.02, -1.0], atol=1e-5
+        )
+        np.testing.assert_allclose(result["intensities"][0], [5.0, 2.0, -1.0])
+
+    def test_preprocess_predictions_applies_sqrt_after_merge(self):
+        result = {
+            "mz": [np.array([200.001, 200.0, 201.0], dtype=np.float32)],
+            "intensities": [np.array([16.0, 9.0, 25.0], dtype=np.float32)],
+        }
+
+        PredictedSpectrumCollection.preprocess_predictions(result, Config())
+
+        # First two peaks merge (9 + 16 = 25), then sqrt gives 5.0.
+        # If sqrt were applied before merge, this would be 3 + 4 = 7.
+        np.testing.assert_allclose(result["intensities"][0], [5.0, 5.0, -1.0])
 
     def test_shared_array_fill_from_cache_preserves_sorted_order_after_truncation(self):
         experiment = SimpleNamespace(
