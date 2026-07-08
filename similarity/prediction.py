@@ -406,6 +406,7 @@ class MzIrtDataFrame(Fixture):
         seq = seq[len_in_bounds]
 
         ptms = self.has_ptms(experiment)
+        std_amino_acids = set(parser.std_amino_acids)
         if experiment.config.variable_mods or experiment.config.fixed_mods:
             logger.info(
                 "Expanding peptide sequences with variable and fixed modifications"
@@ -429,6 +430,7 @@ class MzIrtDataFrame(Fixture):
                 fixed_rules,
             )
             expanded = []
+            skipped = 0
             for peptide in seq:
                 peptide = peptide.decode("ascii")
                 try:
@@ -437,6 +439,16 @@ class MzIrtDataFrame(Fixture):
                     logger.error(
                         "Failed to parse peptide sequence %s: %s", peptide, str(e)
                     )
+                    continue
+
+                if not experiment.config.nonstandard_aminoacids and any(
+                    aa not in std_amino_acids for aa, _ in base.sequence
+                ):
+                    logger.debug(
+                        "Peptide sequence %s contains non-standard amino acids and will be skipped",
+                        peptide,
+                    )
+                    skipped += 1
                     continue
                 for peptidoform in proforma.proteoforms(
                     base,
@@ -454,9 +466,39 @@ class MzIrtDataFrame(Fixture):
                 "Expanded to %d peptide sequences after applying modifications",
                 len(seq),
             )
+            if skipped:
+                logger.warning(
+                    "%d peptide sequences were skipped due to non-standard amino acids",
+                    skipped,
+                )
 
-        if not experiment.config.nonstandard_aminoacids and not ptms:
-            common_aa = set(map(lambda s: bytes(s, "ascii")[0], parser.std_amino_acids))
+        elif not experiment.config.nonstandard_aminoacids and experiment.config.ptms:
+            skipped = np.zeros(len(seq), dtype=bool)
+            for i, peptide in enumerate(seq):
+                peptide = peptide.decode("ascii")
+                try:
+                    parsed = proforma.ProForma.parse(peptide)
+                except aux.PyteomicsError as e:
+                    logger.error(
+                        "Failed to parse peptide sequence %s: %s", peptide, str(e)
+                    )
+                    continue
+
+                if any(aa not in std_amino_acids for aa, _ in parsed.sequence):
+                    logger.debug(
+                        "Peptide sequence %s contains non-standard amino acids and will be skipped",
+                        peptide,
+                    )
+                    skipped[i] = True
+            if skipped.any():
+                logger.warning(
+                    "%d peptide sequences were skipped due to non-standard amino acids",
+                    skipped.sum(),
+                )
+                seq = seq[~skipped]
+
+        elif not experiment.config.nonstandard_aminoacids and not ptms:
+            common_aa = set(map(lambda s: bytes(s, "ascii")[0], std_amino_acids))
             unsupported = np.array([bool(set(s) - common_aa) for s in seq])
             logger.debug("Unsupported mask:\n%s", unsupported[:10])
             if unsupported.any():
