@@ -136,6 +136,30 @@ class MatchPeaksTest(unittest.TestCase):
                     intensities_c[:actual], intensities_python[:expected]
                 )
 
+    def test_merge_close_peaks_c_tail_truncation_with_returned_npeaks(self):
+        config = Config(mass_analyzer=MassAnalyzerType.Orbitrap)
+        mz = np.array(
+            [200.0, 200.001, 200.002, 200.02, 200.021, 200.8], dtype=np.float32
+        )
+        intensities = np.array([9.0, 16.0, 25.0, 4.0, 1.0, 36.0], dtype=np.float32)
+
+        npeaks = merge_close_peaks_sorted(
+            mz,
+            intensities,
+            float(config.resolution),
+            config.mass_analyzer.value,
+        )
+
+        mz[npeaks:] = -1.0
+        intensities[npeaks:] = -1.0
+
+        self.assertLess(npeaks, 6)
+        self.assertTrue(np.all(np.diff(mz[:npeaks]) >= 0))
+        self.assertTrue(np.all(mz[:npeaks] > 0))
+        self.assertTrue(np.all(intensities[:npeaks] > 0))
+        self.assertTrue(np.all(mz[npeaks:] == -1.0))
+        self.assertTrue(np.all(intensities[npeaks:] == -1.0))
+
     def test_match_peaks_matches_dense_reference(self):
         cases = [
             (
@@ -237,6 +261,18 @@ class MatchPeaksTest(unittest.TestCase):
             result["mz"][0], [200.00192, 200.02, -1.0], atol=1e-5
         )
         np.testing.assert_allclose(result["intensities"][0], [5.0, 2.0, -1.0])
+
+    def test_preprocess_predictions_applies_sqrt_after_merge(self):
+        result = {
+            "mz": [np.array([200.001, 200.0, 201.0], dtype=np.float32)],
+            "intensities": [np.array([16.0, 9.0, 25.0], dtype=np.float32)],
+        }
+
+        PredictedSpectrumCollection.preprocess_predictions(result, Config())
+
+        # First two peaks merge (9 + 16 = 25), then sqrt gives 5.0.
+        # If sqrt were applied before merge, this would be 3 + 4 = 7.
+        np.testing.assert_allclose(result["intensities"][0], [5.0, 5.0, -1.0])
 
     def test_shared_array_fill_from_cache_preserves_sorted_order_after_truncation(self):
         experiment = SimpleNamespace(
