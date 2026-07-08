@@ -68,11 +68,11 @@ static int configure_mutable_accessor(PyArrayObject *array, MutableAccessor *acc
 
 static double resolution_at_mz(double resolution, int analyzer_code, double mz) {
     switch (analyzer_code) {
-        case 0:
-            return resolution * sqrt(200.0 / mz);
         case 1:
-            return resolution;
+            return resolution * sqrt(200.0 / mz);
         case 2:
+            return resolution;
+        case 3:
             return resolution * (200.0 / mz);
         default:
             return -1.0;
@@ -404,7 +404,7 @@ static PyObject *merge_close_peaks_sorted(PyObject *self, PyObject *args) {
         PyErr_SetString(PyExc_ValueError, "mz and intensities must have the same length");
         return NULL;
     }
-    if (analyzer_code < 0 || analyzer_code > 2) {
+    if (analyzer_code < 1 || analyzer_code > 3) {
         Py_DECREF(mz);
         Py_DECREF(intensities);
         PyErr_SetString(PyExc_ValueError, "unsupported analyzer code");

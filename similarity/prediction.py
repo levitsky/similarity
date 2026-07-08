@@ -23,12 +23,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-MASS_ANALYZER_CODES = {
-    MassAnalyzerType.Orbitrap: 0,
-    MassAnalyzerType.TOF: 1,
-    MassAnalyzerType.FTICR: 2,
-}
-
 
 class PredictedSpectrumCollection(Fixture):
     batch_size: int = 10000
@@ -41,7 +35,7 @@ class PredictedSpectrumCollection(Fixture):
             mz,
             intensities,
             float(config.resolution),
-            MASS_ANALYZER_CODES[config.mass_analyzer],
+            config.mass_analyzer.value,
         )
 
     @staticmethod

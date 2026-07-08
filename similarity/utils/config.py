@@ -188,7 +188,7 @@ class FragmentationType(LiteralEnum):
     CID = auto()
 
 
-class MassAnalyzerType(LiteralEnum):
+class MassAnalyzerType(Enum):
     Orbitrap = auto()
     TOF = auto()
     FTICR = auto()
