@@ -245,62 +245,57 @@ run_single \
 	--array-file scores_subset_{}.npy
 ```
 
-## Experiment Config Options (`Config` fields)
-
-CLI flags map directly to `Config` fields in kebab-case, for example:
-
-- `Config.precursor_mz_tolerance` -> `--precursor-mz-tolerance`
-- `Config.model_intensity` -> `--model-intensity`
+## Experiment Config Options
 
 Below are the main experiment options and their defaults.
 
 ### Acquisition and precursor setup
 
-- `collision_energy` (default `30`): collision energy passed to prediction models.
-- `fragmentation_type` (default `HCD`): fragmentation regime (`HCD` or `CID`).
-- `min_charge` / `max_charge` (default `2` / `2`): precursor charge-state range to generate and score.
-- `min_length` / `max_length` (default `5` / `30`): peptide length limits.
+- `--collision-energy` (default `30`): collision energy passed to prediction models.
+- `--fragmentation-type` (default `HCD`): fragmentation regime (`HCD` or `CID`).
+- `--min-charge` / `--max-charge` (default `2` / `2`): precursor charge-state range to generate and score.
+- `--min-length` / `--max-length` (default `5` / `30`): peptide length limits.
 
 ### Prediction model selection
 
-- `model_intensity` (default `Prosit_2025_intensity_40PTM`): MS2 intensity model.
-- `model_irt` (default `Prosit_2025_irt_40PTM`): RT/iRT prediction model.
-- `model_ccs` (default `None`): optional CCS model. If enabled, CCS is included in tolerance filtering.
-- `koina_host` (default `koina.wilhelmlab.org:443`): Koina server endpoint.
+- `--model-intensity` (default `Prosit_2025_intensity_40PTM`): MS2 intensity model.
+- `--model-irt` (default `Prosit_2025_irt_40PTM`): RT/iRT prediction model.
+- `--model-ccs` (default `None`): optional CCS model. If enabled, CCS is included in tolerance filtering.
+- `--koina-host` (default `koina.wilhelmlab.org:443`): Koina server endpoint.
 
 ### Pair candidate tolerances
 
-- `precursor_mz_tolerance` (default `10.0`): precursor m/z tolerance.
-- `precursor_mz_unit` (default `PPM`): unit for precursor m/z tolerance (`PPM` or `Th`).
-- `isotope_error` (default `1`): allowed isotope offset during precursor matching.
-- `irt_tolerance` (default `5.0`): absolute iRT tolerance.
-- `ccs_rtolerance` (default `0.02`): relative CCS tolerance (used only when `model_ccs` is set).
+- `--precursor-mz-tolerance` (default `10.0`): precursor m/z tolerance.
+- `--precursor-mz-unit` (default `PPM`): unit for precursor m/z tolerance (`PPM` or `Th`).
+- `--isotope-error` (default `1`): allowed isotope offset during precursor matching.
+- `--irt-tolerance` (default `5.0`): absolute iRT tolerance.
+- `--ccs-rtolerance` (default `0.02`): relative CCS tolerance (used only when `model_ccs` is set).
 
 ### Peak matching and spectral preprocessing
 
-- `fragment_mz_tolerance` (default `10.0`): fragment m/z matching tolerance.
-- `fragment_mz_unit` (default `PPM`): unit for fragment tolerance (`PPM` or `Th`).
-- `resolution` (default `30000`): instrument resolving power used when merging close predicted peaks.
-- `mass_analyzer` (default `Orbitrap`): analyzer model for resolution scaling (`Orbitrap`, `TOF`, `FTICR`).
-- `max_peaks` (default `50`): maximum number of peaks retained per predicted spectrum.
+- `--fragment-mz-tolerance` (default `10.0`): fragment m/z matching tolerance.
+- `--fragment-mz-unit` (default `PPM`): unit for fragment tolerance (`PPM` or `Th`).
+- `--resolution` (default `30000`): instrument resolving power used when merging close predicted peaks.
+- `--mass-analyzer` (default `Orbitrap`): analyzer model for resolution scaling (`Orbitrap`, `TOF`, `FTICR`).
+- `--max-peaks` (default `50`): maximum number of peaks retained per predicted spectrum.
 
 ### Sequence chemistry and PTM controls
 
-- `nonstandard_aminoacids` (default `False`): allow non-standard amino acids.
-- `ptms` (default `False`): enable PTM-aware handling.
-- `fixed_mods` (default `None`): fixed modification rules.
-- `variable_mods` (default `None`): variable modification rules.
+- `--nonstandard-aminoacids` (default `False`): allow non-standard amino acids.
+- `--ptms` (default `False`): enable PTM-aware handling.
+- `--fixed-mods` (default `None`): fixed modification rules.
+- `--variable-mods` (default `None`): variable modification rules.
 
 When using modifications, ensure model choice is compatible with your peptidoform space.
 
 ### Performance and execution behavior
 
-- `workers` (default `cpu_count()`): number of worker processes used in grouping/scoring.
-- `batch_size` (default `1000`): batch size used for grouping.
-- `score_threshold` (default `0.0`): minimum similarity score to keep.
-- `spectrum_collection` (default `SHAREDARRAY`): spectrum storage backend (`SHAREDARRAY` or `CACHED`).
+- `--workers` (default `cpu_count()`): number of worker processes used in grouping/scoring.
+- `--batch-size` (default `1000`): batch size used for grouping.
+- `--score-threshold` (default `0.0`): minimum similarity score to keep.
+- `--spectrum-collection` (default `SHAREDARRAY`): spectrum storage backend (`SHAREDARRAY` or `CACHED`).
 
-Typical strategy: start with moderate `workers` and tune with your RAM and I/O limits.
+Typical strategy: start with moderate `--workers` and tune with your RAM and I/O limits.
 
 ### Subset controls
 
