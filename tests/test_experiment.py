@@ -24,6 +24,7 @@ from similarity.utils.spectrum_collection import SpectrumCollectionType
 from similarity.utils.utils import SingleInputExperimentRunner as ExperimentRunner
 from pathlib import Path
 import logging
+from pyteomics import version as pyteomics_version
 
 try:
     from MSCI.Similarity.spectral_angle_similarity import joinPeaks
@@ -520,6 +521,7 @@ class ExperimentTest(TestBase):
             self.assertFalse(any("B" in seq.decode("ascii") for seq in filtered))
             self.assertTrue(any("B" in seq.decode("ascii") for seq in unfiltered))
 
+    @unittest.skipIf(pyteomics_version.version <= "5.0", "Pyteomics 5.0 fixed mods bug")
     def test_fixed_mods_respect_nonstandard_aminoacids_flag(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             input_file = Path(tmpdir) / "peptides_fixed_mods.txt"
