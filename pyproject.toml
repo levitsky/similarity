@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "similarity"
-version = "0.3"
+version = "0.4"
 description = "Predict mass spectra of peptides and measure their similarity"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "Lev Levitsky", email = "levitsky@bmb.sdu.dk"},
