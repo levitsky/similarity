@@ -24,6 +24,7 @@ from similarity.utils.spectrum_collection import SpectrumCollectionType
 from similarity.utils.utils import SingleInputExperimentRunner as ExperimentRunner
 from pathlib import Path
 import logging
+from pyteomics import version as pyteomics_version
 
 try:
     from MSCI.Similarity.spectral_angle_similarity import joinPeaks
@@ -498,6 +499,78 @@ class ExperimentTest(TestBase):
                 np.allclose(sorted(exp.peptides["m/z"]), [501.752743, 580.382344])
             )
             self.assertEqual(exp.score_df.shape[0], 0)
+
+    def test_variable_mods_respect_nonstandard_aminoacids_flag(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_file = Path(tmpdir) / "peptides_variable_mods.txt"
+            input_file.write_text("ACDMK\nABDMK\n", encoding="ascii")
+
+            base = dataclasses.replace(
+                self.config,
+                variable_mods=["UNIMOD:35|Position:M"],
+            )
+            with Experiment(base, input_file=input_file) as exp:
+                filtered = Experiment.peptides.generate_sequences(exp)
+
+            allow_nonstandard = dataclasses.replace(base, nonstandard_aminoacids=True)
+            with Experiment(allow_nonstandard, input_file=input_file) as exp:
+                unfiltered = Experiment.peptides.generate_sequences(exp)
+
+            self.assertEqual(len(filtered), 2)
+            self.assertEqual(len(unfiltered), 4)
+            self.assertFalse(any("B" in seq.decode("ascii") for seq in filtered))
+            self.assertTrue(any("B" in seq.decode("ascii") for seq in unfiltered))
+
+    @unittest.skipIf(pyteomics_version.version <= "5.0", "Pyteomics 5.0 fixed mods bug")
+    def test_fixed_mods_respect_nonstandard_aminoacids_flag(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_file = Path(tmpdir) / "peptides_fixed_mods.txt"
+            input_file.write_text("ACDMK\nABDMK\n", encoding="ascii")
+
+            base = dataclasses.replace(
+                self.config,
+                fixed_mods=["UNIMOD:35|Position:M"],
+            )
+            with Experiment(base, input_file=input_file) as exp:
+                filtered = Experiment.peptides.generate_sequences(exp)
+
+            allow_nonstandard = dataclasses.replace(base, nonstandard_aminoacids=True)
+            with Experiment(allow_nonstandard, input_file=input_file) as exp:
+                unfiltered = Experiment.peptides.generate_sequences(exp)
+
+            self.assertEqual(len(filtered), 1)
+            self.assertEqual(len(unfiltered), 2)
+            self.assertFalse(any("B" in seq.decode("ascii") for seq in filtered))
+            self.assertTrue(any("B" in seq.decode("ascii") for seq in unfiltered))
+
+    def test_ptm_input_respects_nonstandard_aminoacids_flag(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_file = Path(tmpdir) / "peptides_ptms_nonstandard.txt"
+            input_file.write_text(
+                "[UNIMOD:737]-AAAAAKAK[UNIMOD:737]\n"
+                "[UNIMOD:737]-AABAAKAK[UNIMOD:737]\n",
+                encoding="ascii",
+            )
+
+            base = dataclasses.replace(self.config, ptms=True)
+            with Experiment(base, input_file=input_file) as exp:
+                filtered = Experiment.peptides.generate_sequences(exp)
+
+            allow_nonstandard = dataclasses.replace(base, nonstandard_aminoacids=True)
+            with Experiment(allow_nonstandard, input_file=input_file) as exp:
+                unfiltered = Experiment.peptides.generate_sequences(exp)
+
+            self.assertEqual(
+                set(seq.decode("ascii") for seq in filtered),
+                {"[UNIMOD:737]-AAAAAKAK[UNIMOD:737]"},
+            )
+            self.assertEqual(
+                set(seq.decode("ascii") for seq in unfiltered),
+                {
+                    "[UNIMOD:737]-AAAAAKAK[UNIMOD:737]",
+                    "[UNIMOD:737]-AABAAKAK[UNIMOD:737]",
+                },
+            )
 
     def test_ccs(self):
         """Test that Experiment can handle CCS predictions."""
