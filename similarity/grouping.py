@@ -31,7 +31,6 @@ class GroupingWorker(ExperimentWorker):
 
     config: "Config"
     trees: list[KDTree]
-    radius: float
     shape_1: tuple[int, ...]
     shape_2: tuple[int, ...]
     nbatches: int
