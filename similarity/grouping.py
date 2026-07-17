@@ -488,6 +488,7 @@ class SpectrumGrouping(Fixture):
                 spectra_2=spectra_2,
                 scaling_factors=factors,
                 previous_end=previous_end,
+                shape_1=shape_1,
             )
 
             pseudoworker.mzrt_1 = np.ndarray(

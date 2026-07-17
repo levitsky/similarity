@@ -851,7 +851,7 @@ class EquivalenceTest(TestBase):
 
     def test_peak_matching(self):
         """Test that the peak matching logic correctly identifies matching peaks."""
-        with Experiment(self.config) as exp:
+        with Experiment(self.config, self.test_file) as exp:
             for i, j, score in exp.score_array:
                 with self.subTest(pair=(i, j)):
                     mz1, intensities1 = exp.predicted_spectra[i]
@@ -864,7 +864,12 @@ class EquivalenceTest(TestBase):
                     self.logger.debug("m/z values for peptide 1: %s", mz1)
                     self.logger.debug("m/z values for peptide 2: %s", mz2)
                     g = GroupingWorker(
-                        None, None, config=exp.config, spectra=exp.predicted_spectra
+                        None,
+                        None,
+                        config=exp.config,
+                        spectra_1=exp.predicted_spectra,
+                        spectra_2=exp.predicted_spectra,
+                        shape_1=(exp.peptides.shape[0], 2),
                     )
                     idx1, idx2 = g.match_peaks(mz1, mz2)
                     self.logger.debug("Matched indices: %s and %s", idx1, idx2)
@@ -935,7 +940,7 @@ class EquivalenceTest(TestBase):
 
     def test_similarity_score(self):
         """Test that the similarity score is calculated correctly."""
-        with Experiment(self.config) as exp:
+        with Experiment(self.config, self.test_file) as exp:
             for i, j, score in exp.score_array:
                 with self.subTest(pair=(i, j)):
                     matcher = joinPeaks(
@@ -966,7 +971,12 @@ class EquivalenceTest(TestBase):
                     oldscore = nspectraangle(x_matched, y_matched, m=0, n=1)
 
                     g = GroupingWorker(
-                        None, None, config=exp.config, spectra=exp.predicted_spectra
+                        None,
+                        None,
+                        config=exp.config,
+                        spectra_1=exp.predicted_spectra,
+                        spectra_2=exp.predicted_spectra,
+                        shape_1=(exp.peptides.shape[0], 2),
                     )
                     idx1, idx2 = g.match_peaks(x_df["mz"].values, y_df["mz"].values)
                     newscore = g.similarity_score(

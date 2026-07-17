@@ -195,7 +195,12 @@ class MatchPeaksTest(unittest.TestCase):
             ):
                 config = Config(fragment_mz_unit=unit, fragment_mz_tolerance=tolerance)
                 g = GroupingWorker(
-                    None, None, config=config, spectra_1=None, spectra_2=None
+                    None,
+                    None,
+                    config=config,
+                    spectra_1=None,
+                    spectra_2=None,
+                    shape_1=(mz1.shape[0], 2),
                 )
                 atol = tolerance if unit == MzErrorUnit.Th else 0.0
                 rtol = tolerance / 1e6 if unit == MzErrorUnit.PPM else 0.0
@@ -219,6 +224,7 @@ class MatchPeaksTest(unittest.TestCase):
                 ),
                 spectra_1=None,
                 spectra_2=None,
+                shape_1=(mz1.shape[0], 2),
             )
             idx1, idx2 = g.match_peaks(mz1, mz2)
 
