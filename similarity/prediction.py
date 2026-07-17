@@ -294,14 +294,14 @@ class MzIrtDataFrame(Fixture):
         charge_array[:] = df["precursor_charges"].to_numpy(dtype=np.uint8, copy=False)
         df["precursor_charges"] = charge_array
 
-        mzrt_shape = (df.shape[0], 3 if experiment.config.model_ccs is not None else 2)
+        mzrt_shape = (df.shape[0], 3 if "ccs" in df.columns else 2)
         mzrt = self.shared_array(experiment, "mzrt", shape=mzrt_shape, dtype=np.float32)
         mzrt[:, 0] = df["m/z"].to_numpy(copy=False)
         mzrt[:, 1] = df["irt"].to_numpy(copy=False)
         df["m/z"] = mzrt[:, 0]
         df["irt"] = mzrt[:, 1]
 
-        if experiment.config.model_ccs is not None:
+        if "ccs" in df.columns:
             mzrt[:, 2] = df["ccs"].to_numpy(copy=False)
             df["ccs"] = mzrt[:, 2]
 
