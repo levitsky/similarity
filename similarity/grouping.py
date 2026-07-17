@@ -101,7 +101,7 @@ class GroupingWorker(ExperimentWorker):
         )
 
     def tolerance_check(self):
-        if self.config.model_ccs is not None:
+        if self.mzrt_1.shape[1] == 3:
             return self.within_tolerance_3d
         return self.within_tolerance_2d
 
