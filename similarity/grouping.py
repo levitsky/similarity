@@ -311,9 +311,9 @@ class SpectrumGrouping(Fixture):
         self, experiment: "Experiment", factors: np.ndarray, isotope: int = 0
     ) -> KDTree:
         """Build a KDTree from the (second) peptide DataFrame, applying the scaling factors to each dimension."""
-        _, df = self.assign_inputs(experiment)
+        first, df = self.assign_inputs(experiment)
         names = ["m/z", "irt"]
-        if experiment.config.model_ccs is not None:
+        if "ccs" in df.columns and "ccs" in first.columns:
             names.append("ccs")
         if isotope:
             logger.debug("Applying isotope error of %d to m/z values", isotope)
@@ -336,9 +336,9 @@ class SpectrumGrouping(Fixture):
         min_mz -= experiment.config.absolute_mz_error(min_mz)
         mz_tol = experiment.config.absolute_mz_error(min_mz)
         irt_tol = experiment.config.irt_tolerance
-        if experiment.config.model_ccs is not None:
+        if "ccs" in peptides_1.columns and "ccs" in peptides_2.columns:
             ccs_rtol = experiment.config.ccs_rtolerance
-            ccs_tol = ccs_rtol * max(peptides_1["ccs"].max(), peptides_2["ccs"].max())
+            ccs_tol = ccs_rtol * max(peptides_1["ccs"].min(), peptides_2["ccs"].min())
         else:
             ccs_tol = None
         factors = [1.0, mz_tol / irt_tol]
@@ -393,7 +393,7 @@ class SpectrumGrouping(Fixture):
             ]
             shape_1 = shape_2 = (
                 len(peptides_1),
-                3 if exp.config.model_ccs is not None else 2,
+                3 if "ccs" in peptides_1.columns else 2,
             )
             seq_dtype_1 = seq_dtype_2 = peptides_1["peptide_sequences"].dtype
             spectra_1 = spectra_2 = exp.predicted_spectra
@@ -405,11 +405,11 @@ class SpectrumGrouping(Fixture):
             shared_memory_2 = exp.__class__.peptides_2._shared_memory[exp]
             shape_1 = (
                 len(peptides_1),
-                3 if exp.config.model_ccs is not None else 2,
+                3 if "ccs" in peptides_1.columns and "ccs" in peptides_2.columns else 2,
             )
             shape_2 = (
                 len(peptides_2),
-                3 if exp.config.model_ccs is not None else 2,
+                3 if "ccs" in peptides_1.columns and "ccs" in peptides_2.columns else 2,
             )
             seq_dtype_1 = peptides_1["peptide_sequences"].dtype
             seq_dtype_2 = peptides_2["peptide_sequences"].dtype

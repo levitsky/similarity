@@ -37,4 +37,7 @@ class ScoresDataFrame(Fixture):
         df["m/z 2"] = df["j"].apply(lambda j: peptides_2.loc[j, "m/z"])
         df["iRT 1"] = df["i"].apply(lambda i: peptides_1.loc[i, "irt"])
         df["iRT 2"] = df["j"].apply(lambda j: peptides_2.loc[j, "irt"])
+        if "ccs" in peptides_1.columns and "ccs" in peptides_2.columns:
+            df["CCS 1"] = df["i"].apply(lambda i: peptides_1.loc[i, "ccs"])
+            df["CCS 2"] = df["j"].apply(lambda j: peptides_2.loc[j, "ccs"])
         return df
