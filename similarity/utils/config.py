@@ -225,6 +225,7 @@ class Config(BaseConfig):
     cache_conf: CacheConfigType | None = None
     workers: int = mp.cpu_count()
     batch_size: int = 1000
+    max_queue_size: int = 100000
     score_threshold: float = 0.0
     spectrum_collection: SpectrumCollectionType = SpectrumCollectionType.SHAREDARRAY
     max_peaks: int = 50

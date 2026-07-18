@@ -304,7 +304,6 @@ class GroupingWorker(ExperimentWorker):
 
 
 class SpectrumGrouping(Fixture):
-    max_queue_size: int = 100000
     dtype = np.dtype([("i", np.int32), ("j", np.int32), ("score", np.float32)])
 
     def assign_inputs(
@@ -433,8 +432,8 @@ class SpectrumGrouping(Fixture):
                 "Grouping with %d workers...",
                 experiment.config.workers,
             )
-            in_queue = mp.Queue(maxsize=self.max_queue_size)
-            out_queue = mp.Queue(maxsize=self.max_queue_size)
+            in_queue = mp.Queue(maxsize=experiment.config.max_queue_size)
+            out_queue = mp.Queue(maxsize=experiment.config.max_queue_size)
             workers = [
                 GroupingWorker(
                     in_queue,
