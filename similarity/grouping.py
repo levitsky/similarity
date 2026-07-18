@@ -5,6 +5,7 @@ import numpy as np
 import logging
 import multiprocessing as mp
 import itertools
+import time
 from .utils.abc import Fixture
 from .utils.utils import ExperimentWorker
 from .utils.config import PROTON_MASS, MzErrorUnit
@@ -270,14 +271,25 @@ class GroupingWorker(ExperimentWorker):
                     "Worker with PID %d received None, wrapping up...", self.pid
                 )
                 break
+            batch_start = time.perf_counter()
+            batch_encode_put_seconds = 0.0
+            batch_matches = 0
             for result in self.process_batch(batch):
-                self.result_queue.put(self.encode_result(*result))
+                i, matches, scores = result
+                batch_matches += len(matches)
+                encode_put_start = time.perf_counter()
+                self.result_queue.put(self.encode_result(i, matches, scores))
+                batch_encode_put_seconds += time.perf_counter() - encode_put_start
+            batch_seconds = time.perf_counter() - batch_start
             logger.debug(
-                "Finished batch %d of %d in worker %d. Current output queue size: %d",
+                "Finished batch %d of %d in worker %d. Current output queue size: %d. Batch processing time: %.3fs. Encode+put time: %.3fs. Matches produced: %d",
                 batch + 1,
                 self.nbatches,
                 self.pid,
                 self.result_queue.qsize(),
+                batch_seconds,
+                batch_encode_put_seconds,
+                batch_matches,
             )
         self.result_queue.put(None)
         for shm in self.shared_memory_1.values():
