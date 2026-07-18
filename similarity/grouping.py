@@ -288,9 +288,7 @@ class GroupingWorker(ExperimentWorker):
                 for chunk in self.chunk_result(i, matches, scores):
                     encode_put_start = time.perf_counter()
                     self.result_queue.put(self.encode_result(*chunk))
-                    batch_encode_put_seconds += (
-                        time.perf_counter() - encode_put_start
-                    )
+                    batch_encode_put_seconds += time.perf_counter() - encode_put_start
             batch_seconds = time.perf_counter() - batch_start
             logger.debug(
                 "Finished batch %d of %d in worker %d. Current output queue size: %d. Batch processing time: %.3fs. Encode+put time: %.3fs. Matches produced: %d",
@@ -477,15 +475,28 @@ class SpectrumGrouping(Fixture):
             def produce_results():
                 workers_done = 0
                 count = 0
+                get_seconds = 0.0
+                decode_seconds = 0.0
+                other_processing_seconds = 0.0
                 while workers_done < len(workers):
+                    item_start = time.perf_counter()
+                    get_start = time.perf_counter()
                     item = out_queue.get()
+                    get_elapsed = time.perf_counter() - get_start
+                    get_seconds += get_elapsed
                     if item is None:
                         workers_done += 1
+                        other_processing_seconds += (
+                            time.perf_counter() - item_start - get_elapsed
+                        )
                         logger.debug(
                             "%d of %d workers done", workers_done, len(workers)
                         )
                     else:
+                        decode_start = time.perf_counter()
                         i, matches, scores = GroupingWorker.decode_result(item)
+                        decode_elapsed = time.perf_counter() - decode_start
+                        decode_seconds += decode_elapsed
                         count += 1
                         for m, s in zip(matches, scores):
                             yield (
@@ -493,8 +504,23 @@ class SpectrumGrouping(Fixture):
                                 m + (global_offset if not dual_mode else 0),
                                 s,
                             )
+                        other_processing_seconds += (
+                            time.perf_counter()
+                            - item_start
+                            - get_elapsed
+                            - decode_elapsed
+                        )
                         if count % experiment.config.batch_size == 0:
-                            logger.debug("Processed %d peptides...", count)
+                            logger.debug(
+                                "Processed %d peptide chunks... queue.get time: %.3fs. Decode time: %.3fs. Other processing time: %.3fs",
+                                count,
+                                get_seconds,
+                                decode_seconds,
+                                other_processing_seconds,
+                            )
+                            get_seconds = 0.0
+                            decode_seconds = 0.0
+                            other_processing_seconds = 0.0
 
             scores = np.fromiter(produce_results(), dtype=self.dtype)
             for worker in workers:
