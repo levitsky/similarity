@@ -519,15 +519,14 @@ class SpectrumGrouping(Fixture):
                         )
                         if peptide_count % experiment.config.batch_size == 0:
                             logger.debug(
-                                "Processed %d peptide chunks from %d peptides... queue.get time: %.3fs. Decode time: %.3fs. Other processing time: %.3fs",
+                                "Processed %d peptide chunks from %d peptides... For the last %d, queue.get time: %.3fs. Decode time: %.3fs. Other processing time: %.3fs",
                                 chunk_count,
                                 peptide_count,
+                                experiment.config.batch_size,
                                 get_seconds,
                                 decode_seconds,
                                 other_processing_seconds,
                             )
-                            chunk_count = 0
-                            peptide_count = 0
                             get_seconds = 0.0
                             decode_seconds = 0.0
                             other_processing_seconds = 0.0
