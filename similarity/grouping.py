@@ -149,6 +149,14 @@ class GroupingWorker(ExperimentWorker):
             np.array(scores, dtype=np.float32).tobytes(),
         )
 
+    def chunk_result(
+        self, i: int, matches: list[int], scores: list[float]
+    ) -> Iterable[tuple[int, list[int], list[float]]]:
+        chunk_size = max(1, self.config.max_queue_item_size)
+        for start in range(0, len(matches), chunk_size):
+            stop = start + chunk_size
+            yield i, matches[start:stop], scores[start:stop]
+
     @staticmethod
     def decode_result(encoded: tuple) -> tuple[int, np.ndarray, np.ndarray]:
         i, matches_bytes, scores_bytes = encoded
@@ -277,9 +285,12 @@ class GroupingWorker(ExperimentWorker):
             for result in self.process_batch(batch):
                 i, matches, scores = result
                 batch_matches += len(matches)
-                encode_put_start = time.perf_counter()
-                self.result_queue.put(self.encode_result(i, matches, scores))
-                batch_encode_put_seconds += time.perf_counter() - encode_put_start
+                for chunk in self.chunk_result(i, matches, scores):
+                    encode_put_start = time.perf_counter()
+                    self.result_queue.put(self.encode_result(*chunk))
+                    batch_encode_put_seconds += (
+                        time.perf_counter() - encode_put_start
+                    )
             batch_seconds = time.perf_counter() - batch_start
             logger.debug(
                 "Finished batch %d of %d in worker %d. Current output queue size: %d. Batch processing time: %.3fs. Encode+put time: %.3fs. Matches produced: %d",

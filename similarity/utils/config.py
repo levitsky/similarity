@@ -226,6 +226,7 @@ class Config(BaseConfig):
     workers: int = mp.cpu_count()
     batch_size: int = 1000
     max_queue_size: int = 100000
+    max_queue_item_size: int = 100000
     score_threshold: float = 0.0
     spectrum_collection: SpectrumCollectionType = SpectrumCollectionType.SHAREDARRAY
     max_peaks: int = 50
