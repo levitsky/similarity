@@ -142,27 +142,30 @@ class GroupingWorker(ExperimentWorker):
         return self.similarity_score(intensities1, intensities2, idx1, idx2)
 
     @staticmethod
-    def encode_result(i: int, matches: list[int], scores: list[float]) -> tuple:
+    def encode_result(
+        i: int, matches: list[int], scores: list[float], is_first_chunk: bool
+    ) -> tuple:
         return (
             i,
+            is_first_chunk,
             np.array(matches, dtype=np.int32).tobytes(),
             np.array(scores, dtype=np.float32).tobytes(),
         )
 
     def chunk_result(
         self, i: int, matches: list[int], scores: list[float]
-    ) -> Iterable[tuple[int, list[int], list[float]]]:
+    ) -> Iterable[tuple[int, list[int], list[float], bool]]:
         chunk_size = max(1, self.config.max_queue_item_size)
         for start in range(0, len(matches), chunk_size):
             stop = start + chunk_size
-            yield i, matches[start:stop], scores[start:stop]
+            yield i, matches[start:stop], scores[start:stop], start == 0
 
     @staticmethod
-    def decode_result(encoded: tuple) -> tuple[int, np.ndarray, np.ndarray]:
-        i, matches_bytes, scores_bytes = encoded
+    def decode_result(encoded: tuple) -> tuple[int, bool, np.ndarray, np.ndarray]:
+        i, is_first_chunk, matches_bytes, scores_bytes = encoded
         matches = np.frombuffer(matches_bytes, dtype=np.int32)
         scores = np.frombuffer(scores_bytes, dtype=np.float32)
-        return i, matches, scores
+        return i, is_first_chunk, matches, scores
 
     def process_pair(
         self, i: int, j: int, matches: list[int], scores: list[float]
@@ -474,7 +477,8 @@ class SpectrumGrouping(Fixture):
 
             def produce_results():
                 workers_done = 0
-                count = 0
+                chunk_count = 0
+                peptide_count = 0
                 get_seconds = 0.0
                 decode_seconds = 0.0
                 other_processing_seconds = 0.0
@@ -494,10 +498,13 @@ class SpectrumGrouping(Fixture):
                         )
                     else:
                         decode_start = time.perf_counter()
-                        i, matches, scores = GroupingWorker.decode_result(item)
+                        i, is_first_chunk, matches, scores = (
+                            GroupingWorker.decode_result(item)
+                        )
                         decode_elapsed = time.perf_counter() - decode_start
                         decode_seconds += decode_elapsed
-                        count += 1
+                        chunk_count += 1
+                        peptide_count += int(is_first_chunk)
                         for m, s in zip(matches, scores):
                             yield (
                                 i + global_offset,
@@ -510,14 +517,17 @@ class SpectrumGrouping(Fixture):
                             - get_elapsed
                             - decode_elapsed
                         )
-                        if count % experiment.config.batch_size == 0:
+                        if peptide_count % experiment.config.batch_size == 0:
                             logger.debug(
-                                "Processed %d peptide chunks... queue.get time: %.3fs. Decode time: %.3fs. Other processing time: %.3fs",
-                                count,
+                                "Processed %d peptide chunks from %d peptides... queue.get time: %.3fs. Decode time: %.3fs. Other processing time: %.3fs",
+                                chunk_count,
+                                peptide_count,
                                 get_seconds,
                                 decode_seconds,
                                 other_processing_seconds,
                             )
+                            chunk_count = 0
+                            peptide_count = 0
                             get_seconds = 0.0
                             decode_seconds = 0.0
                             other_processing_seconds = 0.0
