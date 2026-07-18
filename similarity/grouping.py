@@ -444,7 +444,7 @@ class SpectrumGrouping(Fixture):
                 "Grouping with %d workers...",
                 experiment.config.workers,
             )
-            in_queue = mp.Queue(maxsize=experiment.config.max_queue_size)
+            in_queue = mp.Queue()
             out_queue = mp.Queue(maxsize=experiment.config.max_queue_size)
             workers = [
                 GroupingWorker(
