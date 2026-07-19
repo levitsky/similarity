@@ -139,6 +139,8 @@ class GroupingWorker(ExperimentWorker):
         mz1, intensities1 = self.spectra_1[i]
         mz2, intensities2 = self.spectra_2[j]
         idx1, idx2 = self.match_peaks(mz1, mz2)
+        if idx1.size == 0:
+            return 0.0
         return self.similarity_score(intensities1, intensities2, idx1, idx2)
 
     @staticmethod
