@@ -228,6 +228,7 @@ class Config(BaseConfig):
     max_queue_size: int = 10000
     max_queue_item_size: int = 100000
     score_threshold: float = 0.0
+    min_matched_peaks: int = 0
     spectrum_collection: SpectrumCollectionType = SpectrumCollectionType.SHAREDARRAY
     max_peaks: int = 50
     subsets: int = 1

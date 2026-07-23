@@ -135,10 +135,15 @@ class GroupingWorker(ExperimentWorker):
     ) -> float:
         return c_similarity_score(intensities1, intensities2, idx1, idx2)
 
-    def score_pair(self, i: int, j: int) -> float:
+    def score_pair(self, i: int, j: int) -> float | None:
         mz1, intensities1 = self.spectra_1[i]
         mz2, intensities2 = self.spectra_2[j]
         idx1, idx2 = self.match_peaks(mz1, mz2)
+        if (
+            idx1.size < self.config.min_matched_peaks
+            or idx2.size < self.config.min_matched_peaks
+        ):
+            return None
         if idx1.size == 0:
             return 0.0
         return self.similarity_score(intensities1, intensities2, idx1, idx2)
@@ -176,7 +181,7 @@ class GroupingWorker(ExperimentWorker):
             self.dual_mode or (i < j and j >= self.previous_end)
         ) and self.within_tolerance(i, j):
             score = self.score_pair(i, j)
-            if score >= self.config.score_threshold:
+            if score is not None and score >= self.config.score_threshold:
                 matches.append(j)
                 scores.append(score)
 
@@ -578,9 +583,10 @@ class SpectrumGrouping(Fixture):
 
             scores = np.fromiter(produce_results(), dtype=self.dtype)
         logger.info(
-            "Finished scoring, found %d pairs with score above %f",
+            "Finished scoring, found %d pairs with score above %.2f and %d+ peaks matched",
             len(scores),
             experiment.config.score_threshold,
+            experiment.config.min_matched_peaks,
         )
         logger.debug(
             "Indices of peptides: %s .. %s and %s .. %s",
