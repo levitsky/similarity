@@ -25,7 +25,7 @@ dependencies = [
     "koinapy",
     "tritonclient[grpc]",  # for koinapy
     "pyteomics.cythonize",
-    "pyteomics >= 5.0",
+    "pyteomics > 5.0",
     "lxml",
     "scipy",
     "pandas",
