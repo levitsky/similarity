@@ -203,13 +203,16 @@ class GroupingWorker(ExperimentWorker):
         radius = batch_mz_tol * np.sqrt(self.mzrt_1.shape[1])
         neighbors = []
         subtrees = []
+        start_time = time.perf_counter()
         for isotope2 in range(self.config.isotope_error + 1):
             subtree = self.kdtree(batch, isotope2)
             subtrees.append(subtree)
+        after_subtree_time = time.perf_counter()
 
         for tree in self.trees:
             for subtree in subtrees:
                 neighbors.append(subtree.query_ball_tree(tree, r=radius))
+        after_neighbors_time = time.perf_counter()
 
         for x, zindices in enumerate(zip(*neighbors)):
             matches = []
@@ -231,6 +234,16 @@ class GroupingWorker(ExperimentWorker):
 
             if matches:
                 yield (i, matches, scores)
+        end_time = time.perf_counter()
+        logger.debug(
+            "Batch %d of %d processed in %.3fs (subtree: %.3fs, neighbors: %.3fs, scoring: %.3fs)",
+            batch + 1,
+            self.nbatches,
+            end_time - start_time,
+            after_subtree_time - start_time,
+            after_neighbors_time - after_subtree_time,
+            end_time - after_neighbors_time,
+        )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
