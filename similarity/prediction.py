@@ -49,7 +49,8 @@ class PredictedSpectrumCollection(Fixture):
             npeaks = PredictedSpectrumCollection._merge_close_peaks(
                 mz, intensities, config
             )
-
+            positive = intensities[:npeaks] > 0
+            intensities[:npeaks][positive] /= intensities[:npeaks][positive].max()
             np.sqrt(
                 intensities[:npeaks],
                 out=intensities[:npeaks],

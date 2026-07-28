@@ -280,6 +280,18 @@ class MatchPeaksTest(unittest.TestCase):
         # If sqrt were applied before merge, this would be 3 + 4 = 7.
         np.testing.assert_allclose(result["intensities"][0], [5.0, 5.0, -1.0])
 
+    def test_preprocess_predictions_normalizes_merged_spectrum_to_unit_max(self):
+        result = {
+            "mz": [np.array([200.001, 200.0, 201.0], dtype=np.float32)],
+            "intensities": [np.array([0.9, 0.4, 0.8], dtype=np.float32)],
+        }
+
+        PredictedSpectrumCollection.preprocess_predictions(result, Config())
+
+        positive = result["intensities"][0] > 0
+        self.assertTrue(positive.any())
+        self.assertAlmostEqual(float(result["intensities"][0][positive].max()), 1.0)
+
     def test_shared_array_fill_from_cache_preserves_sorted_order_after_truncation(self):
         experiment = SimpleNamespace(
             peptides=pd.DataFrame(
