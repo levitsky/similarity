@@ -253,7 +253,9 @@ class MatchPeaksTest(unittest.TestCase):
         PredictedSpectrumCollection.preprocess_predictions(result, Config())
 
         np.testing.assert_allclose(result["mz"][0], [100.0, 150.0, 200.0])
-        np.testing.assert_allclose(result["intensities"][0], [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(
+            result["intensities"][0], [0.333333333, 0.666666667, 1.0]
+        )
 
     def test_preprocess_predictions_merges_resolution_limited_peaks(self):
         result = {
@@ -266,7 +268,7 @@ class MatchPeaksTest(unittest.TestCase):
         np.testing.assert_allclose(
             result["mz"][0], [200.00192, 200.02, -1.0], atol=1e-5
         )
-        np.testing.assert_allclose(result["intensities"][0], [5.0, 2.0, -1.0])
+        np.testing.assert_allclose(result["intensities"][0], [1.0, 0.4, -1.0])
 
     def test_preprocess_predictions_applies_sqrt_after_merge(self):
         result = {
@@ -278,7 +280,7 @@ class MatchPeaksTest(unittest.TestCase):
 
         # First two peaks merge (9 + 16 = 25), then sqrt gives 5.0.
         # If sqrt were applied before merge, this would be 3 + 4 = 7.
-        np.testing.assert_allclose(result["intensities"][0], [5.0, 5.0, -1.0])
+        np.testing.assert_allclose(result["intensities"][0], [1.0, 1.0, -1.0])
 
     def test_preprocess_predictions_normalizes_merged_spectrum_to_unit_max(self):
         result = {
