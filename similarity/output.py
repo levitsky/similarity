@@ -4,21 +4,22 @@ import logging
 from .utils.abc import Fixture
 
 if TYPE_CHECKING:
+    import numpy as np
     from .experiment import Experiment, SingleInputExperiment, DualInputExperiment
 
 logger = logging.getLogger(__name__)
 
 
 class ScoresDataFrame(Fixture):
-    def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
-        if hasattr(experiment, "peptides_1"):
-            e = cast("DualInputExperiment", experiment)
-            peptides_1 = e.peptides_1
-            peptides_2 = e.peptides_2
-        else:
-            e = cast("SingleInputExperiment", experiment)
-            peptides_1 = peptides_2 = e.peptides
-        df = pd.DataFrame.from_records(experiment.score_array)
+    @staticmethod
+    def score_dataframe(
+        score_array: "np.ndarray",
+        peptides_1: pd.DataFrame,
+        peptides_2: pd.DataFrame | None = None,
+    ) -> pd.DataFrame:
+        if peptides_2 is None:
+            peptides_2 = peptides_1
+        df = pd.DataFrame.from_records(score_array)
         df["peptide 1"] = (
             df["i"]
             .apply(lambda i: peptides_1.loc[i, "peptide_sequences"])
@@ -41,3 +42,13 @@ class ScoresDataFrame(Fixture):
             df["CCS 1"] = df["i"].apply(lambda i: peptides_1.loc[i, "ccs"])
             df["CCS 2"] = df["j"].apply(lambda j: peptides_2.loc[j, "ccs"])
         return df
+
+    def evaluate(self, experiment: "Experiment") -> pd.DataFrame:
+        if hasattr(experiment, "peptides_1"):
+            e = cast("DualInputExperiment", experiment)
+            peptides_1 = e.peptides_1
+            peptides_2 = e.peptides_2
+        else:
+            e = cast("SingleInputExperiment", experiment)
+            peptides_1 = peptides_2 = e.peptides
+        return self.score_dataframe(e.score_array, peptides_1, peptides_2)
