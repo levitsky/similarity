@@ -13,3 +13,4 @@ cache.db*
 *.so
 data/
 build/
+slurm/
