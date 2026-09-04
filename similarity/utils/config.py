@@ -188,6 +188,13 @@ class FragmentationType(LiteralEnum):
     CID = auto()
 
 
+class InstrumentType(LiteralEnum):
+    QE = auto()
+    Lumos = auto()
+    timsTOF = auto()
+    SciexTOF = auto()
+
+
 class MassAnalyzerType(Enum):
     Orbitrap = auto()
     TOF = auto()
@@ -198,6 +205,7 @@ class MassAnalyzerType(Enum):
 class Config(BaseConfig):
     collision_energy: int = 30
     fragmentation_type: FragmentationType = FragmentationType.HCD
+    instrument_type: InstrumentType | None = None
     min_charge: int = 2
     max_charge: int = 2
     min_length: int = 5

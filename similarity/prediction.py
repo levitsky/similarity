@@ -734,4 +734,6 @@ class MzIrtDataFrame(Fixture):
         df["collision_energies"] = experiment.config.collision_energy
         if experiment.config.fragmentation_type is not None:
             df["fragmentation_types"] = experiment.config.fragmentation_type.value
+        if experiment.config.instrument_type is not None:
+            df["instrument_types"] = experiment.config.instrument_type.value
         return df
