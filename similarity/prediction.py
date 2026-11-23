@@ -229,11 +229,17 @@ class MzIrtDataFrame(Fixture):
                 name,
                 dtype,
             )
-            shm = SharedMemory(
-                name=f"{name}{self.suffix}-{id(experiment)}",
-                create=True,
-                size=size,
-            )
+            # O_CREAT without O_EXCL: forkserver workers may re-evaluate this
+            # fixture concurrently with identical id(experiment)-based names.
+            try:
+                shm = SharedMemory(
+                    name=f"{name}{self.suffix}-{id(experiment)}",
+                    create=True,
+                    size=size,
+                )
+            except FileExistsError:
+                # this should never happen
+                shm = SharedMemory(name=f"{name}{self.suffix}-{id(experiment)}")
             shm_dict[name] = shm
         return np.ndarray(shape, dtype=dtype, buffer=shm.buf)
 

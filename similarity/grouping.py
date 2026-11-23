@@ -41,6 +41,8 @@ class GroupingWorker(ExperimentWorker):
     shared_memory_2: dict[str, "SharedMemory"]
     spectra_1: "SpectrumCollection"
     spectra_2: "SpectrumCollection"
+    peptide_index_start_1: int
+    peptide_index_start_2: int
     peptides_1: np.ndarray
     peptides_2: np.ndarray
     charges_1: np.ndarray
@@ -294,6 +296,26 @@ class GroupingWorker(ExperimentWorker):
                 dtype=np.uint8,
                 buffer=self.shared_memory_2["precursor_charges"].buf,
             )
+        for spectra in {
+            id(self.spectra_1): self.spectra_1,
+            id(self.spectra_2): self.spectra_2,
+        }.values():
+            set_shared = getattr(spectra, "set_peptides_from_shared", None)
+            if set_shared is not None:
+                if spectra is self.spectra_1:
+                    set_shared(
+                        self.peptides_1,
+                        self.charges_1,
+                        self.mzrt_1,
+                        self.peptide_index_start_1,
+                    )
+                else:
+                    set_shared(
+                        self.peptides_2,
+                        self.charges_2,
+                        self.mzrt_2,
+                        self.peptide_index_start_2,
+                    )
 
         while True:
             batch = self.task_queue.get()
@@ -481,6 +503,8 @@ class SpectrumGrouping(Fixture):
                     trees=trees,
                     spectra_1=spectra_1,
                     spectra_2=spectra_2,
+                    peptide_index_start_1=int(peptides_1.index[0]),
+                    peptide_index_start_2=int(peptides_2.index[0]),
                     scaling_factors=factors,
                     previous_end=previous_end,
                 )
@@ -563,6 +587,8 @@ class SpectrumGrouping(Fixture):
                 trees=trees,
                 spectra_1=spectra_1,
                 spectra_2=spectra_2,
+                peptide_index_start_1=int(peptides_1.index[0]),
+                peptide_index_start_2=int(peptides_2.index[0]),
                 scaling_factors=factors,
                 previous_end=previous_end,
                 shape_1=shape_1,
@@ -582,6 +608,26 @@ class SpectrumGrouping(Fixture):
             pseudoworker.peptides_2 = peptides_2["peptide_sequences"].values
             pseudoworker.charges_1 = peptides_1["precursor_charges"].values
             pseudoworker.charges_2 = peptides_2["precursor_charges"].values
+            for spectra in {
+                id(pseudoworker.spectra_1): pseudoworker.spectra_1,
+                id(pseudoworker.spectra_2): pseudoworker.spectra_2,
+            }.values():
+                set_shared = getattr(spectra, "set_peptides_from_shared", None)
+                if set_shared is not None:
+                    if spectra is pseudoworker.spectra_1:
+                        set_shared(
+                            pseudoworker.peptides_1,
+                            pseudoworker.charges_1,
+                            pseudoworker.mzrt_1,
+                            pseudoworker.peptide_index_start_1,
+                        )
+                    else:
+                        set_shared(
+                            pseudoworker.peptides_2,
+                            pseudoworker.charges_2,
+                            pseudoworker.mzrt_2,
+                            pseudoworker.peptide_index_start_2,
+                        )
 
             def produce_results():
                 for batch in range(nb):

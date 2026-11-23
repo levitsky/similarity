@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING
 import logging
 import numpy as np
+import pandas as pd
 
 from ..abc import SpectrumCollection, IndexType
 
@@ -28,6 +29,38 @@ class CachedSpectrumCollection(SpectrumCollection):
                 "Cache is not configured, cannot use CachedSpectrumCollection"
             )
         self.index = index
+        self._peptides: "pd.DataFrame | None" = None
+
+    @property
+    def peptides(self) -> "pd.DataFrame":
+        if self._peptides is not None:
+            return self._peptides
+        return super().peptides
+
+    def set_peptides_from_shared(
+        self,
+        sequences: "NDArray[np.bytes_]",
+        charges: "NDArray[np.uint8]",
+        mzrt: "NDArray[np.float32]",
+        index_start: int,
+    ) -> None:
+        """Build the peptide table from shared-memory arrays.
+
+        For use in worker processes, where the peptides fixture cannot be evaluated.
+        """
+        columns: dict[str, "np.ndarray"] = {
+            "peptide_sequences": sequences,
+            "precursor_charges": charges,
+            "m/z": mzrt[:, 0],
+            "irt": mzrt[:, 1],
+        }
+        if mzrt.shape[1] == 3:
+            columns["ccs"] = mzrt[:, 2]
+        self._peptides = pd.DataFrame(
+            columns,
+            copy=False,
+            index=range(index_start, index_start + sequences.shape[0]),
+        )
 
     def _index_key(self, key: int) -> tuple[bytes, int]:
         df = self.peptides

@@ -79,7 +79,12 @@ class SingleInputExperiment(Experiment):
         self.spectrum_file = spectrum_file
 
     def __reduce__(self) -> tuple:
-        return self.__class__, (self.config, self.peptide_table, self.spectrum_file)
+        return self.__class__, (
+            self.config,
+            self.input_file,
+            self.peptide_table,
+            self.spectrum_file,
+        )
 
     def _cleanup(self):
         super()._cleanup()
@@ -115,6 +120,8 @@ class DualInputExperiment(Experiment):
     def __reduce__(self) -> tuple:
         return self.__class__, (
             self.config,
+            self.input_file_1,
+            self.input_file_2,
             self.peptide_table_1,
             self.peptide_table_2,
             self.spectrum_file_1,
