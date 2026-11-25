@@ -1,12 +1,15 @@
 import multiprocessing as mp
+import numpy as np
 from abc import ABC, abstractmethod
 import logging
 from dataclasses import replace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypeAlias, cast, Any, Sequence
 from pathlib import Path
 
 if TYPE_CHECKING:
     from .config import Config
+    from pyteomics.proforma import ProForma
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -131,3 +134,108 @@ class SingleInputExperimentRunner:
 
         for subset in range(1, self.config.subsets + 1):
             self.run_subset(subset)
+
+
+PeptideInput: TypeAlias = "str | Path | Sequence[str | ProForma]"
+PeptideTableInput: TypeAlias = "pd.DataFrame | Path | str"
+SpectrumInput: TypeAlias = "np.ndarray | Path | str"
+
+
+def shape_of(value: Any) -> tuple[int, ...] | int | None:
+    """Best-effort shape of a container-like argument for debug logging."""
+    for attr in ("shape",):
+        shape = getattr(value, attr, None)
+        if shape is not None:
+            return tuple(shape)
+    try:
+        return len(value)  # type: ignore[arg-type]
+    except TypeError:
+        return None
+
+
+def validate_shapes(**kwargs: Any) -> None:
+    for name, value in kwargs.items():
+        if value is None or isinstance(value, (str, bytes, Path)):
+            continue
+        shape = shape_of(value)
+        if shape is not None:
+            logger.debug("Argument %s: shape %s, type %s", name, shape, type(value))
+
+
+def _normalize_peptide_input(
+    input_file: "PeptideInput | None",
+    name: str,
+) -> "np.ndarray | str | Path | bytes | None":
+    """Normalize pre-loaded peptide sequences into an array of ASCII bytes.
+
+    Returns path-like values unchanged so that file-based loading keeps working.
+    """
+    if input_file is None or isinstance(input_file, (str, bytes, Path)):
+        # backward compatibility: a bare string is treated as a file path
+        return input_file
+    if isinstance(input_file, Sequence):
+        input_file = list(input_file)
+    if not isinstance(input_file, (list, tuple, set, frozenset)):
+        raise TypeError(
+            f"{name} must be a container of str or ProForma peptides, got {type(input_file)}"
+        )
+    if not input_file:
+        raise ValueError(f"{name} is an empty container")
+    normalized: list[bytes] = []
+    for i, peptide in enumerate(input_file):
+        try:
+            text = str(peptide)
+            normalized.append(text.encode("ascii"))
+        except (UnicodeEncodeError, ValueError) as e:
+            raise ValueError(
+                f"{name}[{i}] cannot be encoded as ASCII: {peptide!r}"
+            ) from e
+        if not normalized[-1]:
+            raise ValueError(f"{name}[{i}] is an empty peptide sequence")
+    arr = np.array(normalized, dtype="S")
+    return np.unique(arr)
+
+
+def _normalize_peptide_table(
+    peptide_table: "PeptideTableInput | None", name: str
+) -> "pd.DataFrame | str | Path | None":
+    """Validate a DataFrame passed in place of a peptide table file.
+
+    Returns path-like values unchanged so that file-based loading keeps working.
+    """
+    if peptide_table is None or isinstance(peptide_table, (str, Path)):
+        return peptide_table
+    if not hasattr(peptide_table, "columns"):
+        raise TypeError(
+            f"{name} must be a pandas DataFrame, got {type(peptide_table)}"
+        )
+    if peptide_table.shape[0] == 0:
+        raise ValueError(f"{name} is an empty DataFrame")
+    logger.debug("Argument %s: shape %s, columns %s", name, peptide_table.shape, list(peptide_table.columns))
+    return peptide_table
+
+
+def _normalize_spectrum_array(
+    spectrum_file: "SpectrumInput | None", name: str
+) -> "np.ndarray | str | Path | None":
+    """Validate an ndarray passed in place of a spectrum file.
+
+    Returns path-like values unchanged so that file-based loading keeps working.
+    """
+    if spectrum_file is None or isinstance(spectrum_file, (str, Path)):
+        return spectrum_file
+    if not hasattr(spectrum_file, "shape"):
+        raise TypeError(
+            f"{name} must be a numpy ndarray, got {type(spectrum_file)}"
+        )
+    array = np.asarray(spectrum_file)
+    if array.ndim != 3:
+        raise ValueError(
+            f"{name} must be a 3D array of shape (nspectra, 2, npeaks), got shape {array.shape}"
+        )
+    if array.shape[1] != 2:
+        raise ValueError(
+            f"{name} must have 2 rows per spectrum (m/z and intensities), got {array.shape}"
+        )
+    logger.debug("Argument %s: shape %s, dtype %s", name, array.shape, array.dtype)
+    return array

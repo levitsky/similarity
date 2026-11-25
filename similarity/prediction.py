@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, Any, cast
 from collections.abc import Sequence, Callable
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from multiprocessing.shared_memory import SharedMemory
@@ -244,17 +245,22 @@ class MzIrtDataFrame(Fixture):
         return np.ndarray(shape, dtype=dtype, buffer=shm.buf)
 
     def load_peptide_table(
-        self, fpath: "str | Path", experiment: "Experiment"
+        self, fpath: "str | Path | pd.DataFrame", experiment: "Experiment"
     ) -> pd.DataFrame:
-        """Load peptide table from previously saved file into shared memory."""
-        df = pd.read_csv(fpath, sep="\t")
+        """Load peptide table from a file or DataFrame into shared memory."""
+        if isinstance(fpath, (str, Path)):
+            df = pd.read_csv(fpath, sep="\t")
+            fname = str(fpath)
+        else:
+            df = fpath
+            fname = f"in-memory DataFrame with shape {df.shape}"
         required_columns = {"peptide_sequences", "precursor_charges", "irt", "m/z"}
         if experiment.config.model_ccs is not None:
             required_columns.add("ccs")
         missing = required_columns - set(df.columns)
         if missing:
             raise ValueError(
-                f"Missing required columns in peptide table {fpath}: {sorted(missing)}"
+                f"Missing required columns in peptide table {fname}: {sorted(missing)}"
             )
 
         if df["peptide_sequences"].isna().any():
@@ -274,7 +280,7 @@ class MzIrtDataFrame(Fixture):
                 experiment.config.subset,
                 start + 1,
                 end,
-                fpath,
+                fname,
                 df["m/z"].iloc[start],
                 df["m/z"].iloc[end - 1],
             )
@@ -375,13 +381,28 @@ class MzIrtDataFrame(Fixture):
             or experiment.config.fixed_mods
         )
 
-    def generate_sequences(self, experiment: "Experiment") -> np.ndarray:
-        attr = self.get(experiment, "input_file")
-        input_file = cast("str | Path", attr)
-        logger.debug("Generating peptide sequences from %s as %s", input_file, attr)
-        seq = np.unique(np.loadtxt(input_file, dtype=bytes))
+    def generate_sequences(
+        self, experiment: "Experiment", peptides: "np.ndarray | None" = None
+    ) -> np.ndarray:
+        """Return peptide sequences as an array of ASCII bytes.
 
-        logger.info("Loaded %d unique peptide sequences from %s", len(seq), input_file)
+        If `peptides` is provided (e.g. pre-loaded from a container of str or
+        ProForma objects), it is used as is. Otherwise the sequences are read
+        from the `input_file` attribute of the experiment.
+        """
+        if peptides is not None:
+            seq = peptides
+            logger.info("Using %d pre-loaded peptide sequences", len(seq))
+        else:
+            attr = self.get(experiment, "input_file")
+            if isinstance(attr, np.ndarray):
+                seq = attr
+                logger.info("Using %d pre-loaded peptide sequences", len(seq))
+            else:
+                input_file = cast("str | Path", attr)
+                logger.debug("Generating peptide sequences from %s as %s", input_file, attr)
+                seq = np.unique(np.loadtxt(input_file, dtype=bytes))
+        logger.info("Loaded %d unique peptide sequences", len(seq))
         if experiment.config.ptms:
             length = lambda s: len(proforma.ProForma.parse(s.decode("ascii")))
         else:
@@ -592,7 +613,11 @@ class MzIrtDataFrame(Fixture):
             logger.info("Loading peptide table from %s", peptide_table)
             return self.load_peptide_table(peptide_table, experiment)
 
-        seq = self.generate_sequences(experiment)
+        attr = self.get(experiment, "input_file")
+        if isinstance(attr, np.ndarray):
+            seq = self.generate_sequences(experiment, peptides=attr)
+        else:
+            seq = self.generate_sequences(experiment)
         if seq.size == 0:
             logger.error("No valid peptide sequences found in input file, aborting")
             return pd.DataFrame()
