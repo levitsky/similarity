@@ -52,38 +52,53 @@ class SharedArraySpectrumCollection(SpectrumCollection):
         )
         self.array.fill(np.nan)
         spectrum_file = getattr(experiment, "spectrum_file" + self.suffix)
-        if spectrum_file:
+        if spectrum_file is None:
+            return
+        if isinstance(spectrum_file, np.ndarray):
+            self.array[:, :, :] = self._load_spectra_from_array(
+                spectrum_file, f"in-memory spectrum array with shape {spectrum_file.shape}"
+            )
+        else:
             self.load_from_file(spectrum_file)
 
-    def load_from_file(self, file: "str | Path") -> None:
-        arr = np.load(file)
+    def _load_spectra_from_array(
+        self, arr: "np.ndarray", source: str
+    ) -> "NDArray[np.float32]":
+        """Validate an in-memory spectrum array and slice it for this collection.
+
+        Returns the slice that must be copied into `self.array`, following the
+        same shape checks as `load_from_file`.
+        """
         nspectra, narrays, maxpeaks = arr.shape
         if narrays != 2:
             raise ValueError(
-                f"Unsupported spectrum array file format. Expected shape {self.shape}, got {arr.shape}"
+                f"Unsupported spectrum array format. Expected shape {self.shape}, got {arr.shape}"
             )
         if maxpeaks > self.shape[2]:
             raise NotImplementedError(
-                f"Saved array has {maxpeaks} peaks, but expected at most {self.shape[2]}. Reduction currently not implemented."
+                f"Spectrum array has {maxpeaks} peaks, but expected at most {self.shape[2]}. Reduction currently not implemented."
             )
         if maxpeaks < self.shape[2]:
             raise ValueError(
-                f"Saved array has {maxpeaks} peaks, but expected at least {self.shape[2]}. Cannot load into larger array."
+                f"Spectrum array has {maxpeaks} peaks, but expected at least {self.shape[2]}. Cannot load into larger array."
             )
         if nspectra < self.shape[0]:
             raise ValueError(
-                f"Saved array has {nspectra} spectra, but expected at least {self.shape[0]}. Cannot load into larger array."
+                f"Spectrum array has {nspectra} spectra, but expected at least {self.shape[0]}. Cannot load into larger array."
             )
         if nspectra > self.shape[0]:
             if self.experiment.config.subsets == 1:
                 raise ValueError(
-                    f"Saved array has {nspectra} spectra, but expected at most {self.shape[0]}. Cannot load into smaller array."
+                    f"Spectrum array has {nspectra} spectra, but expected at most {self.shape[0]}. Cannot load into smaller array."
                 )
-            logger.info("Loading a subset of the spectrum array from file %s", file)
-            self.array[:, :, :] = arr[self.offset : self.offset + self.shape[0], :, :]
-        else:
-            logger.info("Loading the full spectrum array from file %s", file)
-            self.array[:, :, :] = arr
+            logger.info("Loading a subset of the spectrum array from %s", source)
+            return arr[self.offset : self.offset + self.shape[0], :, :]
+        logger.info("Loading the full spectrum array from %s", source)
+        return arr
+
+    def load_from_file(self, file: "str | Path") -> None:
+        arr = np.load(file)
+        self.array[:, :, :] = self._load_spectra_from_array(arr, f"file {file}")
 
     def __getitem__(
         self, key: int

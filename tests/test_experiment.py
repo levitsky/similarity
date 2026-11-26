@@ -368,6 +368,194 @@ class ExperimentTest(TestBase):
 
             self._assert_score_arrays_equal(loaded_scores, scores_saved)
 
+    def test_preloaded_peptide_list_matches_file(self):
+        """Pre-loaded peptide containers must behave like the file input."""
+        sequences = [
+            s.strip()
+            for s in Path(self.test_file).read_text().splitlines()
+            if s.strip()
+        ]
+
+        with Experiment(self.config, input_file=self.test_file) as exp_file:
+            peptides_file = exp_file.peptides.copy()
+            scores_file = exp_file.score_array.copy()
+
+        with Experiment(self.config, input_file=list(sequences)) as exp_list:
+            peptides_list = exp_list.peptides.copy()
+            scores_list = exp_list.score_array.copy()
+
+        self.assertEqual(
+            [s.decode("ascii") for s in peptides_list["peptide_sequences"]],
+            [s.decode("ascii") for s in peptides_file["peptide_sequences"]],
+        )
+        self._assert_score_arrays_equal(scores_list, scores_file)
+
+        # duplicates must be deduplicated like np.loadtxt + np.unique do
+        with Experiment(self.config, input_file=sequences + sequences) as exp_dup:
+            self.assertEqual(len(exp_dup.peptides), len(peptides_file))
+            self._assert_score_arrays_equal(exp_dup.score_array.copy(), scores_file)
+
+    def test_preloaded_proforma_list_matches_file(self):
+        """ProForma objects must be accepted and treated as sequences."""
+        from pyteomics import proforma
+
+        sequences = [
+            s.strip()
+            for s in Path(self.test_file).read_text().splitlines()
+            if s.strip()
+        ]
+        proforma_input = [proforma.ProForma.parse(s) for s in sequences]
+
+        with Experiment(self.config, input_file=sequences) as exp_str:
+            peptides_str = exp_str.peptides.copy()
+            scores_str = exp_str.score_array.copy()
+        with Experiment(self.config, input_file=proforma_input) as exp_pro:
+            peptides_pro = exp_pro.peptides.copy()
+            scores_pro = exp_pro.score_array.copy()
+
+        self.assertEqual(
+            [s.decode("ascii") for s in peptides_pro["peptide_sequences"]],
+            [s.decode("ascii") for s in peptides_str["peptide_sequences"]],
+        )
+        self._assert_score_arrays_equal(scores_pro, scores_str)
+
+    def test_preloaded_spectrum_array_matches_file(self):
+        """Pre-loaded spectrum arrays must behave like the spectrum file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            spectra_file = Path(tmpdir) / "spectra.npy"
+            with Experiment(self.config, input_file=self.test_file) as exp:
+                scores_saved = exp.score_array.copy()
+                exp.predicted_spectra.save(spectra_file)
+
+            spectra_array = np.load(spectra_file)
+            with Experiment(
+                self.config, input_file=self.test_file, spectrum_file=spectra_array
+            ) as exp:
+                self.assertTrue(exp.predicted_spectra.spectra_available.all())
+                loaded_scores = exp.score_array.copy()
+
+            self._assert_score_arrays_equal(loaded_scores, scores_saved)
+
+    def test_preloaded_peptide_table_matches_file(self):
+        """Pre-loaded peptide table DataFrames must behave like table files."""
+        source = pd.DataFrame(
+            {
+                "peptide_sequences": ["PEPTIDE", "ACDEFGHIK"],
+                "precursor_charges": [2, 3],
+                "irt": [10.5, 20.25],
+                "m/z": [500.123, 620.456],
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            peptide_file = Path(tmpdir) / "peptides.tsv"
+            source.to_csv(peptide_file, index=False, sep="\t")
+
+            with Experiment(self.config, peptide_table=peptide_file) as exp_file:
+                peptides_file = exp_file.peptides.copy()
+            with Experiment(self.config, peptide_table=source.copy()) as exp_df:
+                peptides_df = exp_df.peptides.copy()
+
+        for column in ("peptide_sequences", "precursor_charges", "irt", "m/z"):
+            self.assertEqual(
+                peptides_df[column].tolist(),
+                peptides_file[column].tolist(),
+                f"Column {column} differs between DataFrame and file input",
+            )
+        self.assertEqual(list(peptides_df.columns), list(peptides_file.columns))
+
+    def test_preloaded_dual_input_matches_files(self):
+        """DualInputExperiment with pre-loaded lists must match file inputs."""
+        seq_1 = [
+            s.strip()
+            for s in Path("tests/test_peptides_1.txt").read_text().splitlines()
+            if s.strip()
+        ]
+        seq_2 = [
+            s.strip()
+            for s in Path("tests/test_peptides_2.txt").read_text().splitlines()
+            if s.strip()
+        ]
+
+        with DualInputExperiment(
+            self.config,
+            input_file_1="tests/test_peptides_1.txt",
+            input_file_2="tests/test_peptides_2.txt",
+        ) as exp_files:
+            peptides_1_files = exp_files.peptides_1.copy()
+            peptides_2_files = exp_files.peptides_2.copy()
+            scores_files = exp_files.score_array.copy()
+
+        with DualInputExperiment(
+            self.config, input_file_1=list(seq_1), input_file_2=list(seq_2)
+        ) as exp_lists:
+            peptides_1_lists = exp_lists.peptides_1.copy()
+            peptides_2_lists = exp_lists.peptides_2.copy()
+            scores_lists = exp_lists.score_array.copy()
+
+        self.assertEqual(
+            [s.decode("ascii") for s in peptides_1_lists["peptide_sequences"]],
+            [s.decode("ascii") for s in peptides_1_files["peptide_sequences"]],
+        )
+        self.assertEqual(
+            [s.decode("ascii") for s in peptides_2_lists["peptide_sequences"]],
+            [s.decode("ascii") for s in peptides_2_files["peptide_sequences"]],
+        )
+        self._assert_score_arrays_equal(scores_lists, scores_files)
+
+    def test_input_validation_errors(self):
+        """Explicit errors for invalid shapes and types."""
+        # strings and Paths are file names, they cannot be DataFrames
+        with self.assertRaises(TypeError):
+            Experiment(self.config, peptide_table=12345)
+        with self.assertRaises(TypeError):
+            Experiment(self.config, spectrum_file=[1, 2, 3])
+        with self.assertRaises(ValueError):
+            Experiment(self.config, spectrum_file=np.zeros((2, 4)))
+        with self.assertRaises(TypeError):
+            Experiment(self.config, input_file=12345)
+        with self.assertRaises(ValueError):
+            Experiment(self.config, input_file=[])
+        with self.assertRaises(ValueError):
+            Experiment(self.config, input_file=["PEPTIDE", ""])
+        with self.assertRaises(ValueError):
+            Experiment(self.config, peptide_table=pd.DataFrame())
+        with self.assertRaises(ValueError):
+            DualInputExperiment(self.config, input_file_1=["PEPTIDE"], input_file_2=[])
+        with self.assertRaises(ValueError):
+            DualInputExperiment(
+                self.config, peptide_table_1=pd.DataFrame(), peptide_table_2=None
+            )
+
+    def test_debug_messages_log_argument_shapes(self):
+        """Argument shapes are logged at debug level during construction."""
+        events = []
+
+        class CaptureHandler(logging.Handler):
+            def emit(self, record):
+                events.append(self.format(record))
+
+        handler = CaptureHandler()
+        logger = logging.getLogger("similarity.utils.utils")
+        old_level = logger.level
+        logger.addHandler(handler)
+        logger.setLevel(logging.DEBUG)
+        try:
+            Experiment(
+                self.config,
+                input_file=["PEPTIDEK", "SAMPLER"],
+                peptide_table=pd.DataFrame({"m/z": [1.0, 2.0, 3.0]}),
+                spectrum_file=np.zeros((4, 2, 5)),
+            )
+        finally:
+            logger.removeHandler(handler)
+            logger.setLevel(old_level)
+
+        joined = "\n".join(events)
+        self.assertIn("input_file: shape (2,)", joined)
+        self.assertIn("peptide_table: shape (3, 1)", joined)
+        self.assertIn("spectrum_file: shape (4, 2, 5)", joined)
+        self.assertIn("columns ['m/z']", joined)
+
     def test_subset_scores_match_with_loaded_full_spectra(self):
         subsets = 3
         subset = 2
